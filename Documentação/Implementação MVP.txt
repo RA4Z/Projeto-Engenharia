@@ -1,0 +1,64 @@
+📋 Guia de Implementação: AmpAI — MVP Fase 1 (Workspace Unifilar Web)
+1. Objetivo e Escopo da Fase 1
+O objetivo da Fase 1 é entregar a fundação visual do Workspace do AmpAI: um editor de diagramas unifilares no navegador com gestão de projetos em nuvem
+.Nesta etapa inicial, não serão acoplados os motores pesados de cálculo normativo (IEC/NBR) nem a inteligência artificial
+; o foco total está em garantir um modelo de dados estruturado em Grafo JSON e uma experiência de usuário (UX) fluida e responsiva
+.
+2. Arquitetura de Dados: O Grafo Nodal (Regra de Ouro)
+O sistema não deve ser construído como um editor de desenho vetorial genérico (estilo Canva ou Paint)
+. Cada elemento arrastado para a tela deve ser representado como uma estrutura de dados de Grafo Nodal (Nós e Arestas)
+:
+Nós (nodes): Representam equipamentos físicos (Concessionária, Transformador, Barramento, Disjuntor, Carga/Motor)
+.
+Arestas (edges): Representam as conexões e condutores (Cabos/Linhas) que interligam os equipamentos
+.
+Conectividade Nodal (Início e Fim): Cada cabo/linha precisa saber exatamente de qual elemento nasce (from) e em qual elemento termina (to)
+. Essa topologia é indispensável para que os motores de cálculo futuros leiam o diagrama e simulem a rede sem necessidade de refatorar a interface
+.
+Modelo do Schema JSON do Grafo (.ampai):
+{
+  "projectId": "proj_12345",
+  "version": "1.0.0",
+  "nodes": [
+    { "id": "bus_01", "type": "BUSBAR", "label": "QGBT-01", "properties": { "voltage_v": 380, "phases": 3 } },
+    { "id": "cb_01", "type": "CIRCUIT_BREAKER", "label": "DJ-Geral", "properties": { "nominal_current_a": 400 } },
+    { "id": "load_01", "type": "LOAD", "label": "Motor M1", "properties": { "power_kw": 45, "power_factor": 0.85 } }
+  ],
+  "edges": [
+    { "id": "cable_01", "from": "bus_01", "to": "cb_01", "properties": { "length_m": 25, "section_mm2": 150 } }
+  ]
+}
+3. Componentes da Interface (UX/UI do Workspace)
+Árvore de Projetos / Dashboard: Navegação lateral para organizar os projetos do usuário
+.
+Canvas Central de Desenho (Área de Trabalho):
+Renderização via HTML5 Canvas ou React Flow / SVG
+.
+Snap-to-Grid (Grade Magnética): Alinhamento automático em grid para manter a simetria estética dos unifilares
+.
+Barra de Ferramentas (Palette): Biblioteca com símbolos elétricos vetoriais SVG padronizados (Fontes, Trafos, Disjuntores, Chaves, Cabos, Motores)
+.
+Painel de Propriedades Lateral (Inspiração AutoCAD):
+Ao clicar em qualquer nó ou cabo no unifilar, o painel exibe e permite editar os parâmetros físicos específicos daquele componente (ex: para transformadores: potência kVA e tensões; para cabos: comprimento e seção nominal)
+.
+Suporte a Subelementos: Elementos complexos como Painéis de Baixa/Média Tensão possuem subelementos internos (Entrada, Barramento, TIE, Saídas) que também devem expor suas propriedades individuais
+.
+4. Dashboard e Gestão de Arquivos
+Gerenciador de Estado: Salvamento automático do projeto no localStorage e sincronização no banco de dados
+.
+Importação/Exportação:
+Exportar/Importar arquivo nativo .ampai (Grafo JSON)
+.
+Exportar o diagrama visual em alta resolução (PDF/PNG)
+.
+5. Passo a Passo do Desenvolvimento (Sprint Backlog)
+Passo 1 — Dashboard & Setup: Criar tela de gestão de projetos (listar, criar, renomear e excluir)
+.
+Passo 2 — Motor de Canvas: Implementar a área de trabalho interativa com Pan, Zoom e Snap-to-Grid
+.
+Passo 3 — Drag-and-Drop & Conexões: Permitir arrastar equipamentos da barra de ferramentas e ligar portas de origem/destino, atualizando a estrutura nodes e edges na memória
+.
+Passo 4 — Inspector de Propriedades: Construir a barra lateral reativa amarrada ao componente selecionado
+.
+Passo 5 — Persistence & Export: Implementar a gravação/leitura do JSON (.ampai) e o módulo de exportação do unifilar em PDF/PNG
+.

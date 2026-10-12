@@ -1,0 +1,22 @@
+Barra Lateral Esquerda - Será a árvore de projetos, assim como CODEX, Claude Code, onde você seleciona o projeto que está trabalhando.
+Porém, inspirado no Solidworks, aqui deve ser possível a seleção dos elementos principais (Motores, Geradores, Transformadores, Cabos)
+além de elementos principais como painéis de baixa tensão e painéis de média tensão que possuem sub elementos como entrada, barramento, TIE e cargas (VIDE EXEMPLO NO ESBOÇO). Ou seja, existem elementos que são únicos e possuem  apenas as suas propriedades, mas existem alguns tipos de elementos ((normalmente painéis) que
+além de suas propriedades, possuem subelementos dentro e esses subelementos também possuem suas propriedades únicas para cada subelemento.
+
+
+Barra Lateral Esquerda - Onde aparecerão as propriedades de cada elemento e subelemento, segundo sua própria classe (Transformador,
+gerador, motor, etc) , inspirada na barra de propriedades do AutoCAD; Essas propriedades são os parâmetros físicos e construtivos de cada item, por exemplo: um transformador possui potência, tensão, corrente, impedância entre outros. Já um cabo possui classe de tensão,
+seção nominal, comprimento, e etc.
+
+Barra inferior - Será implementado num passo futuro, para iteração via chat com IA.
+
+Barra superior - Onde ficarão as bibliotecas dos elementos e subelementos. Num primeiro momento nós faremos as bibliotecas, mas já
+podemos pensar na possibilidade de os usuários terem a possibilidade de criar suas bibliotecas.
+
+Área de trabalho (Centro da tela) - Aqui é onde ficarão os diagramas, onde a pessoa desenha tipo um excalidraw, autoCAD e etc.
+Como diagramas unifilares possuem uma certa simetria e formato, podemos pensar em desenhos em grid e não necessariamente um desenho 
+tipo "à mão livre", isso deixaria o desenho esteticamente mais bonito e possivelmente até mais fácil de implementar.
+Um passo para o futuro muito importante é cada elemento ter início e fim, para "saber" que está conectado a outros elementos,
+isso será importante para o passo futuro que envolve os cálculos matemáticos.
+
+

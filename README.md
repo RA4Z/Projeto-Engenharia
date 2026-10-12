@@ -1,0 +1,75 @@
+# AmpAI — workspace de engenharia elétrica
+
+Editor de diagramas unifilares construído em **Next.js, React e TypeScript**, com canvas React Flow. O escopo visual segue os documentos em `Documentação/`; a arquitetura utiliza exclusivamente o frontend nesta fase.
+
+## Executar
+
+```sh
+npm install
+npm run dev
+```
+
+Abra http://127.0.0.1:3000. Para verificar e gerar a versão estática:
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm start
+```
+
+O build gera `out/`, que pode ser hospedado em qualquer servidor de arquivos estáticos. `npm start` apenas serve esses arquivos. Não há API, banco de dados, autenticação ou motor de cálculo remoto. As fontes também são servidas localmente.
+
+## Funcionalidades
+
+- Criar, renomear, alternar e excluir projetos. Um exemplo industrial está disponível na primeira abertura e na criação de projetos.
+- Biblioteca de concessionária, gerador, transformador, painel, barramento, disjuntor, chave seccionadora, TIE, motor e carga.
+- Adicionar com clique ou arrastar e soltar. Seleção, movimentação, zoom, pan, grade magnética, enquadramento e minimapa.
+- Conexões entre portas com cabos que preservam origem e destino. A rede deve ser radial, com uma entrada por equipamento, sem ciclos.
+- Painéis com hierarquia e propriedades próprias. Arraste um equipamento para um painel ou mude o campo Localização. A movimentação do painel acompanha os subelementos.
+- Inspector de equipamentos e cabos, resultados em tempo real e observações de capacidade, tensão e conectividade.
+- Duplicação de equipamentos ou painéis com suas conexões internas. Desfazer/refazer até 60 alterações do projeto atual.
+- Salvamento automático no `localStorage` do navegador. Exportação e importação JSON com validação de esquema e topologia. Importar o mesmo identificador cria uma cópia.
+
+## Cálculos no frontend
+
+Em `lib/calculations.ts`:
+
+- Potência elétrica de motores: `P = potência_no_eixo × demanda / rendimento`.
+- Potência de cargas: `P = potência_nominal × demanda`.
+- `Q = P × tan(acos(fp))`, `S = hypot(P, Q)`. Agregação soma P e Q, e então calcula S.
+- Corrente trifásica equilibrada: `I = S_kVA × 1000 / (√3 × V_linha)`; monofásica: `I = S_kVA × 1000 / V`.
+- Transformadores ideais: a tensão secundária alimenta os circuitos a jusante. Não há perdas nem cálculo de curto-circuito.
+- Queda de tensão por trecho: `ΔU = k × I × L × (R × fp + X × sinφ)`, com k = √3 em três fases, ou 2 em uma fase. Resistência corrigida pela temperatura, material e paralelos. X é editável em Ω/km.
+
+As premissas, unidades e fórmulas também aparecem na aba Análise. A demanda global inclui todas as cargas, inclusive desconectadas. As correntes de elementos consideram suas cargas a jusante. A queda de tensão é estimativa individual por cabo, não acumulada até a carga. Sistemas mistos geram observações; o modelo não distribui cargas monofásicas entre fases.
+
+Referência da fórmula de queda de tensão: [Electrical Installation Guide, Schneider Electric](https://www.electrical-installation.org/enwiki/Calculation_of_voltage_drop_in_steady_load_conditions).
+
+Esta fase não implementa verificação normativa IEC/NBR, ampacidade, seletividade, curto-circuito, IA, exportação PDF/CAD ou colaboração. A impedância do transformador e a curva de disjuntor ficam armazenadas para futuras análises, sem resultados simulados.
+
+## Arquivos JSON
+
+Formato `ampai-project`, versão `1.0.0`, extensão `.json`. O arquivo contém identificação, nome, datas, nós com coordenadas e propriedades, hierarquia dos painéis, arestas `from`/`to` e viewport. O projeto exemplo está em `public/exemplo-industrial.json`.
+
+O importador rejeita propriedades fora do intervalo, IDs duplicados, referências inexistentes, pais inválidos, ciclos e dupla alimentação. Limites: 10 MB por importação, 2.000 equipamentos e 5.000 cabos por arquivo, 100 projetos locais.
+
+O salvamento depende da origem e do armazenamento disponível no navegador. Exportar JSON é a forma de fazer backup e transferir projetos entre dispositivos. Dados de uma sessão local inválida são preservados em `ampai.workspace.v1.recovery` quando o armazenamento permite.
+
+## Atalhos
+
+| Atalho                  | Ação                            |
+| ----------------------- | ------------------------------- |
+| V / H / C               | Selecionar / navegar / conectar |
+| F                       | Enquadrar diagrama              |
+| Ctrl ou Cmd + Z         | Desfazer                        |
+| Ctrl ou Cmd + Shift + Z | Refazer                         |
+| Ctrl ou Cmd + D         | Duplicar                        |
+| Delete / Backspace      | Excluir seleção                 |
+| Ctrl ou Cmd + S         | Exportar JSON                   |
+| Shift + arraste         | Selecionar área                 |
+| ?                       | Abrir guia                      |
+
+## Organização
+
+`app/`: aplicação Next.js e estilos; `components/`: workspace, símbolos e inspector; `lib/project.ts`: contrato JSON e operações de grafo; `lib/catalog.ts`: tipos e propriedades; `lib/calculations.ts`: cálculos; `tests/`: testes de engenharia e persistência.
