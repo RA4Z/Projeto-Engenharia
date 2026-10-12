@@ -139,6 +139,7 @@ export default function Inspector({
   project,
   analysis,
   selection,
+  selectionSummary,
   tab,
   onTab,
   onUpdate,
@@ -151,6 +152,7 @@ export default function Inspector({
   project: Project;
   analysis: Analysis;
   selection: string | null;
+  selectionSummary?: { equipment: number; cables: number };
   tab: "properties" | "analysis";
   onTab: (tab: "properties" | "analysis") => void;
   onUpdate: (
@@ -317,6 +319,54 @@ export default function Inspector({
                 Referência das fórmulas de queda de tensão ↗
               </a>
             </details>
+          </>
+        ) : selectionSummary ? (
+          <>
+            <div className="section-eyebrow">SELEÇÃO MÚLTIPLA</div>
+            <h2 className="inspector-heading">Edite o conjunto.</h2>
+            <p className="muted-text">
+              Mova os itens juntos, copie ou duplique a seleção. Selecione um
+              único item para editar seus parâmetros.
+            </p>
+            <div className="project-overview">
+              <div className="section-eyebrow">NESTA SELEÇÃO</div>
+              <div>
+                <span>Equipamentos selecionados</span>
+                <b>{selectionSummary.equipment}</b>
+              </div>
+              <div>
+                <span>Cabos selecionados</span>
+                <b>{selectionSummary.cables}</b>
+              </div>
+            </div>
+            <div className="inspector-tip">
+              <Info size={16} />
+              <p>
+                Use as setas para mover 1 px ou Shift + setas para mover 10 px.
+                Painéis acompanham seus equipamentos.
+              </p>
+            </div>
+            <div className="item-actions">
+              <button
+                className="secondary-button"
+                disabled={!selectionSummary.equipment}
+                onClick={onDuplicate}
+              >
+                <Copy size={14} />
+                Duplicar
+              </button>
+              <button className="danger-button" onClick={onDelete}>
+                <Trash2 size={14} />
+                Excluir
+              </button>
+            </div>
+            <button
+              className="secondary-button full-width clear-selection"
+              onClick={onClear}
+            >
+              <X size={14} />
+              Limpar seleção
+            </button>
           </>
         ) : item ? (
           <>

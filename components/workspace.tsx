@@ -23,6 +23,8 @@ import {
   Cable as CableIcon,
   Check,
   CheckCircle2,
+  Copy,
+  ClipboardPaste,
   ChevronDown,
   ChevronRight,
   CircleHelp,
@@ -73,6 +75,13 @@ import {
 } from "@/lib/geometry";
 import DiagramCanvas from "./diagram-canvas";
 import { restoreWorkspace } from "@/lib/workspace-storage";
+import {
+  captureSelection,
+  insertFragment,
+  nudgeSelection,
+  type SelectionFragment,
+} from "@/lib/editing";
+import { editorAction } from "@/lib/shortcuts";
 import Inspector from "./inspector";
 import Symbol from "./symbol";
 
@@ -90,6 +99,7 @@ function WorkspaceInner() {
   const [canSave, setCanSave] = useState(true);
   const [saved, setSaved] = useState<"saving" | "saved" | "error">("saved");
   const [selection, setSelection] = useState<string[]>([]);
+  const selectionIds = useMemo(() => new Set(selection), [selection]);
   const [history, setHistory] = useState<History>({ past: [], future: [] });
   const [mode, setMode] = useState<"select" | "pan" | "connect">("select");
   const [snap, setSnap] = useState(true);
@@ -110,6 +120,8 @@ function WorkspaceInner() {
   > | null>(null);
   const [zoom, setZoom] = useState(1);
   const [newDemo, setNewDemo] = useState(false);
+  const [clipboard, setClipboard] = useState<SelectionFragment | null>(null);
+  const pasteCount = useRef(0);
   const importBusy = useRef(false);
   const latestProjects = useRef(projects);
   useEffect(() => {
@@ -217,7 +229,8 @@ function WorkspaceInner() {
   );
   const commit = useCallback(
     (next: Project, record = true) => {
-      if (!project || next === project || next.projectId !== project.projectId) return;
+      if (!project || next === project || next.projectId !== project.projectId)
+        return;
       if (record) remember(project);
       setProjects((prev) =>
         prev.map((p) =>
@@ -307,105 +320,201 @@ function WorkspaceInner() {
   }, [project, notify]);
   const duplicate = useCallback(() => {
     if (!project) return;
-    const original = project.nodes.find((n) => n.id === selection[0]);
-    if (!original) return;
-    const childCount =
-      original.type === "PANEL"
-        ? project.nodes.filter((node) => node.parentId === original.id).length
-        : 0;
-    if (project.nodes.length + childCount + 1 > 2000) {
-      notify("A cópia ultrapassa o limite de 2.000 equipamentos.", true);
+    try {
+      const next = insertFragment(
+        project,
+        captureSelection(project, selection),
+        { duplicate: true },
+      );
+      if (next.project === project) return;
+      commit(next.project);
+      setSelection(next.selection);
+      setMode("select");
+      notify(
+        `${next.selection.length} ${next.selection.length === 1 ? "equipamento duplicado" : "equipamentos duplicados"}.`,
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Não foi possível duplicar.",
+        true,
+      );
+    }
+  }, [project, selection, commit, notify]);
+  const copySelection = useCallback(() => {
+    if (!project) return;
+    const fragment = captureSelection(project, selection);
+    if (!fragment.nodes.length) {
+      notify(
+        "Selecione equipamentos para copiar. As conexões internas são incluídas.",
+      );
       return;
     }
-    const copy = {
-      ...original,
-      id: uid("node"),
-      label: `${original.label.slice(0, 90)} · cópia`,
-      position: { x: original.position.x + 40, y: original.position.y + 40 },
-      properties: { ...original.properties },
-    };
-    copy.position = clampEquipmentPosition(copy, copy.position);
-    if (copy.parentId) {
-      copy.position.x = Math.min(
-        copy.type === "BUSBAR" ? 320 : 440,
-        copy.position.x,
-      );
-      copy.position.y = Math.min(430, copy.position.y);
-    }
-    const children =
-      original.type === "PANEL"
-        ? project.nodes
-            .filter((n) => n.parentId === original.id)
-            .map((n) => ({
-              ...n,
-              id: uid("node"),
-              parentId: copy.id,
-              properties: { ...n.properties },
-            }))
-        : [];
-    const map = new Map(
-      project.nodes
-        .filter((n) => n.parentId === original.id)
-        .map((n, i) => [n.id, children[i]?.id]),
+    setClipboard(fragment);
+    pasteCount.current = 0;
+    notify(
+      `${fragment.nodes.length} ${fragment.nodes.length === 1 ? "equipamento copiado" : "equipamentos copiados"}. Cole neste ou em outro projeto.`,
     );
-    const edges =
-      original.type === "PANEL"
-        ? project.edges
-            .filter((e) => map.has(e.from) && map.has(e.to))
-            .map((e) => ({
-              ...e,
-              id: uid("cable"),
-              from: map.get(e.from)!,
-              to: map.get(e.to)!,
-              properties: { ...e.properties },
-            }))
-        : [];
-    commit({
-      ...project,
-      nodes: [...project.nodes, copy, ...children].sort(
-        (a, b) => Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)),
-      ),
-      edges: [...project.edges, ...edges],
-    });
-    setSelection([copy.id]);
-  }, [project, selection, commit, notify]);
+  }, [project, selection, notify]);
+  const pasteSelection = useCallback(() => {
+    if (!project || !clipboard || !flow || !canvasRef.current) return;
+    try {
+      const box = canvasRef.current.getBoundingClientRect();
+      const center = flow.screenToFlowPosition({
+        x: box.x + box.width / 2,
+        y: box.y + box.height / 2,
+      });
+      const offset = pasteCount.current * 40;
+      const next = insertFragment(project, clipboard, {
+        center: { x: center.x + offset, y: center.y + offset },
+      });
+      commit(next.project);
+      setSelection(next.selection);
+      setMode("select");
+      pasteCount.current++;
+      notify(
+        `${next.selection.length} ${next.selection.length === 1 ? "equipamento colado" : "equipamentos colados"}.`,
+      );
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Não foi possível colar.",
+        true,
+      );
+    }
+  }, [project, clipboard, flow, commit, notify]);
+  const fitSelection = useCallback(() => {
+    if (!project || !flow) return;
+    const ids = new Set(selection);
+    for (const edge of project.edges)
+      if (ids.has(edge.id)) {
+        ids.add(edge.from);
+        ids.add(edge.to);
+      }
+    const nodes = project.nodes
+      .filter((n) => ids.has(n.id))
+      .map((n) => ({ id: n.id }));
+    if (nodes.length)
+      void flow.fitView({
+        nodes,
+        padding: { top: "130px", bottom: "65px", x: "40px" },
+        maxZoom: 1.2,
+        duration: 200,
+      });
+  }, [project, selection, flow]);
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
+      const target = event.target;
       if (
-        target.closest('input,textarea,select,[contenteditable="true"]') ||
-        modal
+        modal ||
+        !(target instanceof HTMLElement) ||
+        target.closest(
+          'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]',
+        )
       )
         return;
-      const mod = event.ctrlKey || event.metaKey;
-      if (mod && event.key.toLowerCase() === "z") {
+      const action = editorAction(event);
+      if (!action) return;
+      if (action === "nudge") {
+        if (
+          mode !== "select" ||
+          !project ||
+          !project.nodes.some((n) => selection.includes(n.id))
+        )
+          return;
         event.preventDefault();
-        event.shiftKey ? redo() : undo();
-      } else if (mod && event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        redo();
-      } else if (mod && event.key.toLowerCase() === "s") {
-        event.preventDefault();
-        exportProject();
-      } else if (mod && event.key.toLowerCase() === "d") {
-        event.preventDefault();
-        duplicate();
-      } else if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        removeSelection();
-      } else if (event.key === "Escape") {
-        setSelection([]);
-        setMode("select");
-      } else if (event.key.toLowerCase() === "v") setMode("select");
-      else if (event.key.toLowerCase() === "h") setMode("pan");
-      else if (event.key.toLowerCase() === "c") setMode("connect");
-      else if (event.key.toLowerCase() === "f")
-        void flow?.fitView({ padding: 0.22, maxZoom: 1, duration: 200 });
-      else if (event.key === "?") setModal({ type: "help" });
+        // Own the gesture before React Flow handles focused nodes, so it is saved and undoable.
+        event.stopPropagation();
+        const step = event.shiftKey ? 10 : 1;
+        const dx =
+          event.key === "ArrowLeft"
+            ? -step
+            : event.key === "ArrowRight"
+              ? step
+              : 0;
+        const dy =
+          event.key === "ArrowUp"
+            ? -step
+            : event.key === "ArrowDown"
+              ? step
+              : 0;
+        commit(nudgeSelection(project, selection, dx, dy), !event.repeat);
+        return;
+      }
+      event.preventDefault();
+      switch (action) {
+        case "undo":
+          undo();
+          break;
+        case "redo":
+          redo();
+          break;
+        case "export":
+          exportProject();
+          break;
+        case "duplicate":
+          if (!event.repeat) duplicate();
+          break;
+        case "copy":
+          if (!event.repeat) copySelection();
+          break;
+        case "paste":
+          if (!event.repeat) pasteSelection();
+          break;
+        case "selectAll":
+          setMode("select");
+          setSelection(
+            project
+              ? [
+                  ...project.nodes.map((n) => n.id),
+                  ...project.edges.map((e) => e.id),
+                ]
+              : [],
+          );
+          break;
+        case "delete":
+          removeSelection();
+          break;
+        case "clear":
+          setSelection([]);
+          setMode("select");
+          break;
+        case "select":
+          setMode("select");
+          break;
+        case "pan":
+          setMode("pan");
+          break;
+        case "connect":
+          setMode("connect");
+          break;
+        case "fit":
+          void flow?.fitView({ padding: 0.22, maxZoom: 1, duration: 200 });
+          break;
+        case "fitSelection":
+          fitSelection();
+          break;
+        case "help":
+          setModal({ type: "help" });
+          break;
+      }
     };
-    window.addEventListener("keydown", handle);
-    return () => window.removeEventListener("keydown", handle);
-  }, [modal, undo, redo, exportProject, duplicate, removeSelection, flow]);
+    window.addEventListener("keydown", handle, true);
+    return () => window.removeEventListener("keydown", handle, true);
+  }, [
+    modal,
+    mode,
+    project,
+    selection,
+    commit,
+    undo,
+    redo,
+    exportProject,
+    duplicate,
+    copySelection,
+    pasteSelection,
+    fitSelection,
+    removeSelection,
+    flow,
+  ]);
 
   const connect = useCallback(
     (connection: Connection) => {
@@ -673,6 +782,13 @@ function WorkspaceInner() {
       n.label.toLowerCase().includes(query.toLowerCase()) ||
       catalog[n.type].name.toLowerCase().includes(query.toLowerCase()),
   );
+  const selectedEquipmentCount = project.nodes.filter((n) =>
+    selectionIds.has(n.id),
+  ).length;
+  const selectedCableCount = project.edges.filter((e) =>
+    selectionIds.has(e.id),
+  ).length;
+  const selectedCount = selectedEquipmentCount + selectedCableCount;
   const renderTreeNode = (node: Project["nodes"][number], child = false) => {
     const children = query
       ? []
@@ -1021,6 +1137,7 @@ function WorkspaceInner() {
               className={mode === "select" ? "active" : ""}
               title="Selecionar e mover (V)"
               aria-label="Selecionar e mover"
+              aria-pressed={mode === "select"}
               onClick={() => setMode("select")}
             >
               <MousePointer2 size={19} />
@@ -1030,6 +1147,7 @@ function WorkspaceInner() {
               className={mode === "pan" ? "active" : ""}
               title="Mover área de trabalho (H)"
               aria-label="Mover área de trabalho"
+              aria-pressed={mode === "pan"}
               onClick={() => setMode("pan")}
             >
               <Hand size={19} />
@@ -1040,6 +1158,7 @@ function WorkspaceInner() {
               className={mode === "connect" ? "active" : ""}
               title="Conectar equipamentos (C)"
               aria-label="Conectar equipamentos"
+              aria-pressed={mode === "connect"}
               onClick={() => {
                 setMode("connect");
                 notify(
@@ -1067,7 +1186,64 @@ function WorkspaceInner() {
             >
               <Redo2 size={18} />
             </button>
+            <span />
+            <button
+              disabled={!clipboard}
+              title="Colar equipamentos copiados (Ctrl+V)"
+              aria-label="Colar equipamentos"
+              onClick={pasteSelection}
+            >
+              <ClipboardPaste size={18} />
+            </button>
           </div>
+          {selectedCount > 0 && (
+            <div
+              className="selection-actions"
+              role="toolbar"
+              aria-label="Ações da seleção"
+            >
+              <span>
+                {selectedCount} selecionado{selectedCount === 1 ? "" : "s"}
+              </span>
+              <button
+                title="Enquadrar seleção (Shift+F)"
+                aria-label="Enquadrar seleção"
+                onClick={fitSelection}
+              >
+                <Maximize size={16} />
+              </button>
+              <button
+                disabled={!selectedEquipmentCount}
+                title="Copiar seleção (Ctrl+C)"
+                aria-label="Copiar seleção"
+                onClick={copySelection}
+              >
+                <Copy size={16} />
+              </button>
+              <button
+                disabled={!selectedEquipmentCount}
+                title="Duplicar seleção (Ctrl+D)"
+                aria-label="Duplicar seleção"
+                onClick={duplicate}
+              >
+                <Layers3 size={16} />
+              </button>
+              <button
+                title="Excluir seleção (Delete)"
+                aria-label="Excluir seleção"
+                onClick={removeSelection}
+              >
+                <Trash2 size={16} />
+              </button>
+              <button
+                title="Limpar seleção (Esc)"
+                aria-label="Limpar seleção"
+                onClick={() => setSelection([])}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {project.nodes.length === 0 && (
             <div className="empty-canvas">
               <div>
@@ -1137,7 +1313,9 @@ function WorkspaceInner() {
                 ? "Arraste para navegar pelo diagrama"
                 : mode === "connect"
                   ? "Arraste entre as portas para conectar"
-                  : "Arraste para selecionar · Scroll para zoom · H para navegar"}
+                  : selectedEquipmentCount > 0
+                    ? "Setas para ajuste fino · Shift + setas para mover 10 px"
+                    : "Arraste para selecionar · Scroll para zoom · H para navegar"}
             </span>
             <button
               className="canvas-help"
@@ -1182,7 +1360,12 @@ function WorkspaceInner() {
       <Inspector
         project={project}
         analysis={analysis}
-        selection={selection[0] ?? null}
+        selection={selectedCount === 1 ? (selection[0] ?? null) : null}
+        selectionSummary={
+          selectedCount > 1
+            ? { equipment: selectedEquipmentCount, cables: selectedCableCount }
+            : undefined
+        }
         tab={tab}
         onTab={setTab}
         onUpdate={updateItem}
@@ -1296,9 +1479,14 @@ function WorkspaceInner() {
                     ["H", "Navegar"],
                     ["C", "Conectar"],
                     ["F", "Enquadrar"],
+                    ["Shift + F", "Enquadrar seleção"],
                     ["Ctrl + Z", "Desfazer"],
                     ["Ctrl + Shift + Z", "Refazer"],
                     ["Ctrl + D", "Duplicar"],
+                    ["Ctrl + C / V", "Copiar / colar equipamentos"],
+                    ["Ctrl + A", "Selecionar tudo"],
+                    ["Setas / Shift + setas", "Mover 1 / 10 px"],
+                    ["Esc", "Limpar seleção"],
                     ["Delete", "Excluir"],
                     ["Ctrl + S", "Exportar JSON"],
                     ["Shift + arraste", "Selecionar área"],

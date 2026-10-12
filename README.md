@@ -28,7 +28,8 @@ O build gera `out/`, que pode ser hospedado em qualquer servidor de arquivos est
 - Conexões entre portas com cabos que preservam origem e destino. A rede deve ser radial, com uma entrada por equipamento, sem ciclos.
 - Painéis com hierarquia e propriedades próprias. Arraste um equipamento para um painel ou mude o campo Localização. A movimentação do painel acompanha os subelementos.
 - Inspector de equipamentos e cabos, resultados em tempo real e observações de capacidade, tensão e conectividade.
-- Duplicação de equipamentos ou painéis com suas conexões internas. Desfazer/refazer até 60 alterações do projeto atual.
+- Duplicação de seleções completas, incluindo painéis e conexões internas. Copiar e colar conjuntos entre projetos pela área de transferência interna do editor, durante a sessão. Cópias recebem IDs novos e rótulos sem colisões; colar posiciona o conjunto no centro da área visível.
+- Barra de ações da seleção para enquadrar, copiar, duplicar, excluir e limpar. Resumo próprio no inspector para seleções múltiplas. Ajuste fino com as setas e desfazer/refazer até 60 alterações do projeto atual; segurar uma seta produz uma única entrada no histórico.
 - Salvamento automático no `localStorage` do navegador. Exportação e importação JSON com validação de esquema e topologia. Importar o mesmo identificador cria uma cópia.
 
 ## Cálculos no frontend
@@ -58,17 +59,22 @@ O salvamento depende da origem e do armazenamento disponível no navegador. Expo
 
 ## Atalhos
 
-| Atalho                  | Ação                            |
-| ----------------------- | ------------------------------- |
-| V / H / C               | Selecionar / navegar / conectar |
-| F                       | Enquadrar diagrama              |
-| Ctrl ou Cmd + Z         | Desfazer                        |
-| Ctrl ou Cmd + Shift + Z | Refazer                         |
-| Ctrl ou Cmd + D         | Duplicar                        |
-| Delete / Backspace      | Excluir seleção                 |
-| Ctrl ou Cmd + S         | Exportar JSON                   |
-| Shift + arraste         | Selecionar área                 |
-| ?                       | Abrir guia                      |
+| Atalho                  | Ação                                            |
+| ----------------------- | ----------------------------------------------- |
+| V / H / C               | Selecionar / navegar / conectar                 |
+| F                       | Enquadrar diagrama                              |
+| Shift + F               | Enquadrar seleção (inclui pontas dos cabos)     |
+| Ctrl ou Cmd + Z         | Desfazer                                        |
+| Ctrl ou Cmd + Shift + Z | Refazer                                         |
+| Ctrl ou Cmd + D         | Duplicar                                        |
+| Ctrl ou Cmd + C / V     | Copiar / colar equipamentos e conexões internas |
+| Ctrl ou Cmd + A         | Selecionar todos os equipamentos e cabos        |
+| Setas / Shift + setas   | Mover seleção 1 / 10 px                         |
+| Esc                     | Limpar seleção e voltar ao modo de seleção      |
+| Delete / Backspace      | Excluir seleção                                 |
+| Ctrl ou Cmd + S         | Exportar JSON                                   |
+| Shift + arraste         | Selecionar área                                 |
+| ?                       | Abrir guia                                      |
 
 ## Organização
 
