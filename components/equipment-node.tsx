@@ -7,9 +7,12 @@ import { catalog } from "@/lib/catalog";
 import type { EquipmentFlowNode } from "@/lib/canvas-state";
 import { number } from "@/lib/calculations";
 import Symbol from "./symbol";
+import { useDiagramDetail } from "./cable-edge";
 
 function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
   const { equipment: n, result, warning } = data;
+  const detail = useDiagramDetail();
+  const level = selected ? 2 : detail;
   const preview = useContext(ConnectionPreviewContext);
   const candidate = preview?.destinations.has(n.id);
   const reason = preview?.destinations.get(n.id);
@@ -30,7 +33,10 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
   const definition = catalog[n.type];
   if (n.type === "PANEL")
     return (
-      <div className={`panel-node ${selected ? "is-selected" : ""}`}>
+      <div
+        data-detail={level}
+        className={`panel-node ${selected ? "is-selected" : ""}`}
+      >
         <div className="panel-node-header">
           <span className="panel-node-title">
             <Symbol type="PANEL" size={20} />
@@ -58,6 +64,7 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
   return (
     <div
       className={`equipment-node ${n.type === "BUSBAR" ? "busbar-node" : ""} ${selected ? "is-selected" : ""} ${warning ? "has-warning" : ""}`}
+      data-detail={level}
       style={{ "--symbol-color": definition.color } as React.CSSProperties}
     >
       {!["SOURCE", "GENERATOR"].includes(n.type) && (
@@ -94,7 +101,13 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
         )}
       </div>
       <div className="node-label">
-        {n.label}
+        <span title={n.label}>
+          {level === 0
+            ? n.label.split(" · ")[0].length > 9
+              ? `${n.label.split(" · ")[0].slice(0, 8)}…`
+              : n.label.split(" · ")[0]
+            : n.label}
+        </span>
         {lock}
         {warning && (
           <span

@@ -25,7 +25,10 @@ export type Cable = {
   sourceHandle?: string;
   label: string;
   properties: Properties;
+  layout?: CableLayout;
 };
+export type Point = { x: number; y: number };
+export type CableLayout = { waypoints?: Point[]; labelOffset?: Point };
 export type Project = {
   format: "ampai-project";
   version: "1.0.0";
@@ -84,6 +87,25 @@ const projectSchema = z.object({
           .optional(),
         label: z.string().max(100),
         properties: propertiesSchema,
+        layout: z
+          .object({
+            waypoints: z
+              .array(
+                z.object({
+                  x: z.number().finite().min(-200000).max(200000),
+                  y: z.number().finite().min(-200000).max(200000),
+                }),
+              )
+              .max(20)
+              .optional(),
+            labelOffset: z
+              .object({
+                x: z.number().finite().min(-10000).max(10000),
+                y: z.number().finite().min(-10000).max(10000),
+              })
+              .optional(),
+          })
+          .optional(),
       }),
     )
     .max(5000),

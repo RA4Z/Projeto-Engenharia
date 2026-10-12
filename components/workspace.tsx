@@ -100,6 +100,11 @@ import Inspector from "./inspector";
 import Symbol from "./symbol";
 import GuidedTour from "./guided-tour";
 import LearningCenter from "./learning-center";
+import ExportPreview from "./export-preview";
+import ProjectsOverview from "./projects-overview";
+import { feedingCircuit } from "@/lib/circuit-focus";
+import { updateCableLayout } from "@/lib/cable-path";
+import { equipmentSize } from "@/lib/geometry";
 import ActionMenu from "./action-menu";
 import CommandPalette from "./command-palette";
 import type { Command } from "@/lib/command-search";
@@ -118,11 +123,17 @@ import {
 } from "@/lib/onboarding";
 
 type Modal =
-  | { type: "create" | "rename"; name: string }
+  | { type: "create" | "rename"; name: string; projectId?: string }
   | { type: "delete"; projectId: string; name: string }
   | { type: "help" }
   | null;
 type History = { past: Project[]; future: Project[] };
+type ToastAction = {
+  label: string;
+  run: () => void;
+  undoSnapshot?: Project;
+  projectId?: string;
+};
 
 function WorkspaceInner() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -142,6 +153,12 @@ function WorkspaceInner() {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [tab, setTab] = useState<"properties" | "analysis">("properties");
   const [modal, setModal] = useState<Modal>(null);
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const [exportPreview, setExportPreview] = useState<{
+    project: Project;
+    format: "png" | "pdf";
+  } | null>(null);
+  const [circuitId, setCircuitId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const paletteFocus = useRef<HTMLElement | null>(null);
   const [actionMenu, setActionMenu] = useState<{
@@ -160,6 +177,7 @@ function WorkspaceInner() {
   const [toast, setToast] = useState<{
     message: string;
     error?: boolean;
+    action?: ToastAction;
   } | null>(null);
   const [flow, setFlow] = useState<ReactFlowInstance<
     EquipmentFlowNode,
@@ -169,8 +187,7 @@ function WorkspaceInner() {
   const [newDemo, setNewDemo] = useState(false);
   const [clipboard, setClipboard] = useState<SelectionFragment | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [exporting, setExporting] = useState<"png" | "pdf" | null>(null);
-  const exportBusy = useRef(false);
+  const undoAction = useRef(() => {});
   const exportRef = useRef<HTMLDivElement>(null);
   const pasteCount = useRef(0);
   const importBusy = useRef(false);
@@ -193,7 +210,7 @@ function WorkspaceInner() {
     });
   }, []);
   const openPalette = useCallback(() => {
-    if (modal || tourActive) return;
+    if (modal || tourActive || overviewOpen || exportPreview) return;
     paletteFocus.current =
       document.activeElement instanceof HTMLElement
         ? document.activeElement
@@ -202,12 +219,18 @@ function WorkspaceInner() {
     setActionMenu(null);
     setExportOpen(false);
     setPaletteOpen(true);
-  }, [modal, tourActive]);
+  }, [modal, tourActive, overviewOpen, exportPreview]);
   useEffect(() => {
     setActionMenu(null);
     setPaletteOpen(false);
   }, [activeId, tourActive, modal]);
   const project = projects.find((p) => p.projectId === activeId);
+  const backgroundBlocked = paletteOpen || overviewOpen || !!exportPreview;
+  const focusedCircuit = useMemo(() => {
+    const result =
+      project && circuitId ? feedingCircuit(project, circuitId) : null;
+    return result?.nodes.size ? result : null;
+  }, [project?.nodes, project?.edges, circuitId]);
   const focusNodes = useProjectViewport(project, flow, canvasRef);
   const {
     nodes: filteredNodes,
@@ -229,7 +252,8 @@ function WorkspaceInner() {
   }, [project?.nodes]);
   const analysis = useProjectAnalysis(project);
   const notify = useCallback(
-    (message: string, error = false) => setToast({ message, error }),
+    (message: string, error = false, action?: ToastAction) =>
+      setToast({ message, error, action }),
     [],
   );
   useEffect(() => {
@@ -440,6 +464,8 @@ function WorkspaceInner() {
     setSelection([]);
     setHistory({ past: [], future: [] });
     setQuery("");
+    setCircuitId(null);
+    setToast(null);
   };
   const undo = useCallback(() => {
     if (!project || !history.past.length) return;
@@ -481,11 +507,19 @@ function WorkspaceInner() {
     );
     setSelection([]);
   }, [project, history, activeId]);
+  useLayoutEffect(() => {
+    undoAction.current = undo;
+  }, [undo]);
   const removeSelection = useCallback(() => {
     if (!project || !selection.length) return;
     commit(deleteItems(project, selection));
     setSelection([]);
-  }, [project, selection, commit]);
+    notify("Elementos removidos do diagrama.", false, {
+      label: "Desfazer",
+      run: () => undoAction.current(),
+      undoSnapshot: project,
+    });
+  }, [project, selection, commit, notify]);
   const exportProject = useCallback(() => {
     const current = latestProjects.current.find(
       (item) => item.projectId === activeId,
@@ -510,30 +544,12 @@ function WorkspaceInner() {
     }
   }, [activeId, notify]);
   const exportVisual = useCallback(
-    async (format: "png" | "pdf") => {
-      if (!project || exportBusy.current) return;
-      exportBusy.current = true;
-      setExporting(format);
+    (format: "png" | "pdf") => {
+      if (!project) return;
       setExportOpen(false);
-      try {
-        const { exportDiagram } = await import("@/lib/diagram-export");
-        const result = await exportDiagram(project, format);
-        notify(
-          `Diagrama ${format.toUpperCase()} exportado (${result.width} × ${result.height} px).${result.reduced ? " Resolução ajustada ao tamanho do projeto." : ""}`,
-        );
-      } catch (error) {
-        notify(
-          error instanceof Error
-            ? error.message
-            : "Não foi possível exportar o diagrama.",
-          true,
-        );
-      } finally {
-        exportBusy.current = false;
-        setExporting(null);
-      }
+      setExportPreview({ project, format });
     },
-    [project, notify],
+    [project],
   );
   useEffect(() => {
     if (!exportOpen) return;
@@ -629,8 +645,9 @@ function WorkspaceInner() {
     }));
     if (nodes.length)
       void flow.fitView({
+        includeHiddenNodes: true,
         nodes,
-        padding: { top: "130px", bottom: "65px", x: "40px" },
+        padding: { top: "24px", bottom: "65px", x: "40px" },
         maxZoom: 1.2,
         duration: 200,
       });
@@ -638,7 +655,14 @@ function WorkspaceInner() {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       const target = event.target;
-      if (modal || tourActive || !(target instanceof HTMLElement)) return;
+      if (
+        modal ||
+        tourActive ||
+        overviewOpen ||
+        exportPreview ||
+        !(target instanceof HTMLElement)
+      )
+        return;
       const action = editorAction(event);
       if (action === "commands") {
         event.preventDefault();
@@ -647,6 +671,11 @@ function WorkspaceInner() {
         return;
       }
       if (paletteOpen) return;
+      if (
+        target.closest("[data-cable-control]") &&
+        ["nudge", "delete", "clear"].includes(action ?? "")
+      )
+        return;
       if (actionMenu) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -752,8 +781,9 @@ function WorkspaceInner() {
           break;
         case "fit":
           void flow?.fitView({
+            includeHiddenNodes: true,
             padding: {
-              top: selection.length ? "130px" : "80px",
+              top: "24px",
               bottom: "65px",
               x: "40px",
             },
@@ -788,6 +818,8 @@ function WorkspaceInner() {
     removeSelection,
     flow,
     exportOpen,
+    overviewOpen,
+    exportPreview,
     paletteOpen,
     openPalette,
     closePalette,
@@ -918,6 +950,86 @@ function WorkspaceInner() {
     if (window.innerWidth < 800) setLeftOpen(false);
     if (project) focusNodes(selectionEquipmentIds(project, [id]));
   };
+  const traceItem = (id: string) => {
+    if (!project) return;
+    if (circuitId === id) {
+      setCircuitId(null);
+      return;
+    }
+    const circuit = feedingCircuit(project, id);
+    if (!circuit.nodes.size) return;
+    setCircuitId(id);
+    focusNodes([...circuit.nodes]);
+    if (!circuit.supplied)
+      notify("O caminho destacado ainda não chega a uma alimentação.", true, {
+        label: "Ver análise",
+        run: () => {
+          setTab("analysis");
+          setRightOpen(true);
+        },
+        projectId: project.projectId,
+      });
+  };
+  const addCableBend = (id: string) => {
+    if (!project) return;
+    const edge = project.edges.find((e) => e.id === id);
+    if (!edge || (edge.layout?.waypoints?.length ?? 0) >= 20) return;
+    const absolute = (nodeId: string) => {
+      const n = project.nodes.find((n) => n.id === nodeId)!;
+      const parent = project.nodes.find((p) => p.id === n.parentId);
+      return {
+        x:
+          n.position.x +
+          (parent?.position.x ?? 0) +
+          equipmentSize(n.type).width / 2,
+        y:
+          n.position.y +
+          (parent?.position.y ?? 0) +
+          equipmentSize(n.type).height / 2,
+      };
+    };
+    const source = edge.layout?.waypoints?.at(-1) ?? absolute(edge.from),
+      target = absolute(edge.to);
+    commit(
+      updateCableLayout(project, id, {
+        ...edge.layout,
+        waypoints: [
+          ...(edge.layout?.waypoints ?? []),
+          {
+            x: Math.round((source.x + target.x) / 2 + 60),
+            y: Math.round((source.y + target.y) / 2),
+          },
+        ],
+      }),
+    );
+    setMode("select");
+    notify(
+      "Dobra adicionada. Arraste o ponto do cabo; use Delete sobre o ponto para removê-lo.",
+    );
+  };
+  const resetCable = (id: string) => {
+    if (project) commit(updateCableLayout(project, id));
+  };
+  const exportNamedProject = (item: Project) => {
+    try {
+      const url = URL.createObjectURL(
+        new Blob([serializeProject(item)], {
+          type: "application/json;charset=utf-8",
+        }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${fileStem(item.name)}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify(`Projeto ${item.name} exportado em JSON.`);
+    } catch (error) {
+      notify(
+        error instanceof Error ? error.message : "Não foi possível exportar.",
+        true,
+      );
+    }
+  };
   const lockSelection = (locked: boolean) => {
     if (!project) return;
     commit(setPositionLock(project, selection, locked));
@@ -1035,7 +1147,23 @@ function WorkspaceInner() {
       setModal(null);
       setNewDemo(false);
     } else if (modal.type === "rename" && modal.name.trim() && project) {
-      commit({ ...project, name: modal.name.trim() });
+      const renamed = projects.find(
+        (p) => p.projectId === (modal.projectId ?? activeId),
+      );
+      if (renamed?.projectId === activeId)
+        commit({ ...renamed, name: modal.name.trim() });
+      else if (renamed)
+        setProjects((previous) =>
+          previous.map((p) =>
+            p.projectId === renamed.projectId
+              ? {
+                  ...p,
+                  name: modal.name.trim(),
+                  updatedAt: new Date().toISOString(),
+                }
+              : p,
+          ),
+        );
       setModal(null);
     } else if (modal.type === "delete") {
       let remaining = projects.filter((p) => p.projectId !== modal.projectId);
@@ -1080,6 +1208,13 @@ function WorkspaceInner() {
     selectionIds.has(e.id),
   ).length;
   const selectedCount = selectedEquipmentCount + selectedCableCount;
+  const selectedCable =
+    selectedCount === 1
+      ? project.edges.find((e) => e.id === selection[0])
+      : undefined;
+  const canTrace =
+    selectedCount === 1 &&
+    project.nodes.find((n) => n.id === selection[0])?.type !== "PANEL";
   const movableCount = movableSelection(project, selection).length;
   const ownLocked = project.nodes.some(
     (n) => selectionIds.has(n.id) && n.locked,
@@ -1111,7 +1246,12 @@ function WorkspaceInner() {
           label: "Enquadrar diagrama",
           detail: "Ação · F",
           run: () =>
-            void flow?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 }),
+            void flow?.fitView({
+              includeHiddenNodes: true,
+              padding: 0.2,
+              maxZoom: 1,
+              duration: 200,
+            }),
         },
         {
           id: "fit-selection",
@@ -1277,8 +1417,8 @@ function WorkspaceInner() {
       />
       <header
         className="topbar"
-        inert={paletteOpen}
-        aria-hidden={paletteOpen || undefined}
+        inert={backgroundBlocked}
+        aria-hidden={backgroundBlocked || undefined}
       >
         <div className="brand">
           <div className="brand-mark">
@@ -1310,6 +1450,17 @@ function WorkspaceInner() {
         </div>
         <div className="topbar-actions">
           <button
+            className="secondary-button overview-button"
+            aria-label="Visão geral dos projetos"
+            title="Visão geral dos projetos"
+            onClick={() => {
+              setExportOpen(false);
+              setOverviewOpen(true);
+            }}
+          >
+            <FolderOpen size={16} />
+          </button>
+          <button
             className="secondary-button quick-search-button"
             aria-label="Busca rápida (Ctrl+K)"
             title="Busca rápida (Ctrl+K)"
@@ -1331,13 +1482,13 @@ function WorkspaceInner() {
           <div className="export-control" ref={exportRef} data-tour="export">
             <button
               className="primary-button"
-              disabled={!!exporting}
+              disabled={!!exportPreview}
               aria-expanded={exportOpen}
               aria-controls="export-options"
               onClick={() => setExportOpen((v) => !v)}
             >
               <ArrowDownToLine size={15} />
-              {exporting ? `Gerando ${exporting.toUpperCase()}…` : "Exportar"}
+              Exportar
               <ChevronDown size={13} />
             </button>
             {exportOpen && (
@@ -1368,7 +1519,7 @@ function WorkspaceInner() {
                   onClick={() => void exportVisual("pdf")}
                 >
                   <strong>Diagrama PDF</strong>
-                  <small>Folha A3 para imprimir ou compartilhar</small>
+                  <small>Prévia, papel e orientação da página</small>
                 </button>
                 {!project.nodes.length && (
                   <p>Adicione um equipamento para exportar o diagrama.</p>
@@ -1388,8 +1539,8 @@ function WorkspaceInner() {
       <aside
         className="left-sidebar"
         data-tour="projects"
-        inert={paletteOpen}
-        aria-hidden={paletteOpen || undefined}
+        inert={backgroundBlocked}
+        aria-hidden={backgroundBlocked || undefined}
       >
         <div className="sidebar-section-label">
           <span>SEU WORKSPACE</span>
@@ -1543,8 +1694,8 @@ function WorkspaceInner() {
       </aside>
       <main
         className="main-workspace"
-        inert={paletteOpen}
-        aria-hidden={paletteOpen || undefined}
+        inert={backgroundBlocked}
+        aria-hidden={backgroundBlocked || undefined}
       >
         <div className="canvas-titlebar">
           <div>
@@ -1628,71 +1779,7 @@ function WorkspaceInner() {
             </button>
           </div>
         </div>
-        <div
-          className={`canvas-area canvas-mode-${mode}`}
-          ref={canvasRef}
-          tabIndex={-1}
-          aria-label="Área do diagrama"
-          onDrop={onDrop}
-          onDragOver={(e) => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }}
-        >
-          <DiagramCanvas
-            key={project.projectId}
-            project={project}
-            analysis={analysis}
-            selection={selection}
-            onSelection={setSelection}
-            mode={mode}
-            snap={snap}
-            showMap={showMap}
-            onInit={setFlow}
-            onConnect={connect}
-            onCommit={commit}
-            onProperties={showProperties}
-            onZoom={setZoom}
-            onViewport={saveViewport}
-            onContextMenu={showContextMenu}
-          />
-
-          {welcome && !modal && !tourActive && (
-            <section className="welcome-card" aria-label="Boas-vindas ao AmpAI">
-              <button
-                className="icon-button welcome-close"
-                aria-label="Dispensar boas-vindas"
-                onClick={dismissWelcome}
-              >
-                <X size={17} />
-              </button>
-              <span className="section-eyebrow">
-                SEU PRIMEIRO CIRCUITO COMEÇA AQUI
-              </span>
-              <h2>Conheça seu novo workspace.</h2>
-              <p>
-                Um passeio rápido pelos símbolos, conexões, cálculos e arquivos
-                do seu projeto.
-              </p>
-              <button className="primary-button full-width" onClick={startTour}>
-                Conhecer o editor <ChevronRight size={16} />
-              </button>
-              <div className="welcome-links">
-                <button
-                  onClick={() => {
-                    dismissWelcome();
-                    setModal({ type: "help" });
-                  }}
-                >
-                  Ler o tutorial
-                </button>
-                <button onClick={dismissWelcome}>
-                  Explorar por conta própria
-                </button>
-              </div>
-            </section>
-          )}
-
+        <div className="canvas-controls-dock">
           <div className="canvas-toolbar" data-tour="tools">
             <button
               className={mode === "select" ? "active" : ""}
@@ -1834,8 +1921,120 @@ function WorkspaceInner() {
               >
                 <X size={16} />
               </button>
+              <button
+                aria-label="Destacar circuito completo"
+                title="Destacar caminho da alimentação"
+                disabled={!canTrace}
+                aria-pressed={!!focusedCircuit}
+                onClick={() => traceItem(selection[0])}
+              >
+                <Zap size={16} />
+              </button>
             </div>
           )}
+          {focusedCircuit && (
+            <div className="circuit-focus-chip" role="status">
+              <Zap size={14} />
+              <span>
+                Alimentação de <b>{focusedCircuit.label}</b> ·{" "}
+                {focusedCircuit.nodes.size} equipamentos
+              </span>
+              <button
+                aria-label="Sair do destaque do circuito"
+                onClick={() => setCircuitId(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+          )}
+          {selectedCable && (
+            <div className="cable-actions-dock">
+              <span>{selectedCable.label}</span>
+              <button
+                className="secondary-button"
+                onClick={() => addCableBend(selectedCable.id)}
+                disabled={(selectedCable.layout?.waypoints?.length ?? 0) >= 20}
+              >
+                Adicionar dobra
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!selectedCable.layout}
+                onClick={() => resetCable(selectedCable.id)}
+              >
+                Restaurar trajeto e rótulo
+              </button>
+              <small>Arraste o rótulo ou os pontos do cabo.</small>
+            </div>
+          )}
+        </div>
+        <div
+          className={`canvas-area canvas-mode-${mode}`}
+          ref={canvasRef}
+          tabIndex={-1}
+          aria-label="Área do diagrama"
+          onDrop={onDrop}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+          }}
+        >
+          <DiagramCanvas
+            key={project.projectId}
+            project={project}
+            analysis={analysis}
+            selection={selection}
+            onSelection={setSelection}
+            mode={mode}
+            snap={snap}
+            showMap={showMap}
+            onInit={setFlow}
+            onConnect={connect}
+            onCommit={commit}
+            onProperties={showProperties}
+            onZoom={setZoom}
+            onViewport={saveViewport}
+            onContextMenu={showContextMenu}
+            focusedCircuit={focusedCircuit}
+            onMessage={notify}
+          />
+
+          {welcome && !modal && !tourActive && (
+            <section className="welcome-card" aria-label="Boas-vindas ao AmpAI">
+              <button
+                className="icon-button welcome-close"
+                aria-label="Dispensar boas-vindas"
+                onClick={dismissWelcome}
+              >
+                <X size={17} />
+              </button>
+              <span className="section-eyebrow">
+                SEU PRIMEIRO CIRCUITO COMEÇA AQUI
+              </span>
+              <h2>Conheça seu novo workspace.</h2>
+              <p>
+                Um passeio rápido pelos símbolos, conexões, cálculos e arquivos
+                do seu projeto.
+              </p>
+              <button className="primary-button full-width" onClick={startTour}>
+                Conhecer o editor <ChevronRight size={16} />
+              </button>
+              <div className="welcome-links">
+                <button
+                  onClick={() => {
+                    dismissWelcome();
+                    setModal({ type: "help" });
+                  }}
+                >
+                  Ler o tutorial
+                </button>
+                <button onClick={dismissWelcome}>
+                  Explorar por conta própria
+                </button>
+              </div>
+            </section>
+          )}
+
           {project.nodes.length === 0 && (
             <div className="empty-canvas">
               <div>
@@ -1883,8 +2082,9 @@ function WorkspaceInner() {
                 title="Enquadrar diagrama (F)"
                 onClick={() =>
                   void flow?.fitView({
+                    includeHiddenNodes: true,
                     padding: {
-                      top: selection.length ? "130px" : "80px",
+                      top: "24px",
                       bottom: "65px",
                       x: "40px",
                     },
@@ -1961,7 +2161,7 @@ function WorkspaceInner() {
         </footer>
       </main>
       <Inspector
-        inert={paletteOpen}
+        inert={backgroundBlocked}
         project={project}
         analysis={analysis}
         onClose={() => setRightOpen(false)}
@@ -1979,10 +2179,46 @@ function WorkspaceInner() {
         onParent={changeParent}
         onClear={() => setSelection([])}
         onSelect={focusItem}
+        onLocate={(id) => {
+          setSelection([id]);
+          focusNodes(selectionEquipmentIds(project, [id]));
+        }}
+        onTrace={traceItem}
+        onResetCable={resetCable}
+        onAddBend={addCableBend}
         selectedIds={selection}
         onBatchUpdate={batchUpdate}
         onLock={lockSelection}
       />
+      {overviewOpen && (
+        <ProjectsOverview
+          projects={projects}
+          activeId={activeId}
+          onClose={() => setOverviewOpen(false)}
+          onOpen={(id) => {
+            selectProject(id);
+            setOverviewOpen(false);
+          }}
+          onNew={() => {
+            setOverviewOpen(false);
+            setModal({ type: "create", name: "" });
+          }}
+          onRename={(id) => {
+            const p = projects.find((p) => p.projectId === id)!;
+            setOverviewOpen(false);
+            setModal({ type: "rename", projectId: id, name: p.name });
+          }}
+          onExport={exportNamedProject}
+        />
+      )}
+      {exportPreview && (
+        <ExportPreview
+          project={exportPreview.project}
+          initialFormat={exportPreview.format}
+          onClose={() => setExportPreview(null)}
+          onExported={(message) => notify(message)}
+        />
+      )}
       {actionMenu && (
         <ActionMenu
           x={actionMenu.x}
@@ -2044,6 +2280,7 @@ function WorkspaceInner() {
                       label: "Enquadrar diagrama",
                       run: () =>
                         void flow?.fitView({
+                          includeHiddenNodes: true,
                           padding: 0.2,
                           maxZoom: 1,
                           duration: 200,
@@ -2071,10 +2308,27 @@ function WorkspaceInner() {
       {toast && (
         <div
           className={`toast ${toast.error ? "error" : ""}`}
+          inert={backgroundBlocked}
+          aria-hidden={backgroundBlocked || undefined}
           role={toast.error ? "alert" : "status"}
         >
           {toast.error ? <CircleHelp size={17} /> : <Check size={17} />}
           <span>{toast.message}</span>
+          {toast.action &&
+            (!toast.action.projectId || toast.action.projectId === activeId) &&
+            (!toast.action.undoSnapshot ||
+              history.past.at(-1) === toast.action.undoSnapshot) && (
+              <button
+                className="toast-action"
+                onClick={() => {
+                  const action = toast.action;
+                  setToast(null);
+                  action?.run();
+                }}
+              >
+                {toast.action.label}
+              </button>
+            )}
           <button aria-label="Fechar mensagem" onClick={() => setToast(null)}>
             <X size={14} />
           </button>

@@ -17,9 +17,9 @@ type Camera = Pick<
   "fitView" | "setViewport"
 >;
 const focusOptions = {
-  padding: 0.8,
+  padding: 0.2,
   maxZoom: 0.9,
-  minZoom: 0.4,
+  minZoom: 0.15,
   duration: 250,
 };
 
@@ -45,6 +45,7 @@ export function useProjectViewport(
       pendingFocus.current = null;
       if (requested?.projectId === project.projectId) {
         void flow.fitView({
+          includeHiddenNodes: true,
           ...focusOptions,
           nodes: requested.ids.map((id) => ({ id })),
         });
@@ -58,7 +59,8 @@ export function useProjectViewport(
         (box && viewportNeedsFit(viewport, box.width, box.height))
       )
         void flow.fitView({
-          padding: { top: "80px", bottom: "65px", x: "35px" },
+          includeHiddenNodes: true,
+          padding: { top: "24px", bottom: "65px", x: "35px" },
           maxZoom: 0.8,
           duration: 0,
         });
@@ -74,7 +76,11 @@ export function useProjectViewport(
         pendingFocus.current = { projectId: project.projectId, ids };
         return;
       }
-      void flow.fitView({ ...focusOptions, nodes: ids.map((id) => ({ id })) });
+      void flow.fitView({
+        includeHiddenNodes: true,
+        ...focusOptions,
+        nodes: ids.map((id) => ({ id })),
+      });
     },
     [project?.projectId, flow],
   );

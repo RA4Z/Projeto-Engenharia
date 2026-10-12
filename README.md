@@ -37,7 +37,12 @@ O build gera `out/`, que pode ser hospedado em qualquer servidor de arquivos est
 - Busca rápida por Ctrl/Cmd+K ou botão Buscar: encontra equipamentos e cabos, adiciona símbolos e executa ações. Aceita buscas sem acentos e vários termos; correspondências exatas de nome têm prioridade. Setas navegam, Enter executa e Esc fecha, restaurando o foco. O editor fica inerte enquanto a janela está aberta.
 - Salvamento automático no `localStorage` do navegador. Exportação e importação JSON com validação de esquema e topologia. Importar o mesmo identificador cria uma cópia.
 - Classe de tensão dos cabos (U0/U) no inspector e no JSON. Projetos antigos continuam válidos e recebem "Não informada"; o editor não assume uma isolação para os cabos existentes.
-- Menu Exportar com projeto JSON, imagem PNG e diagrama PDF A3. A imagem é gerada a partir de todo o grafo, independentemente do zoom, da seleção e da posição da câmera, com fundo branco e sem controles do editor.
+- Menu Exportar com projeto JSON e prévia de PNG/PDF. O desenho inclui todo o grafo, independentemente da câmera; a prévia permite escolher nomes, parâmetros, rótulos, margens, papel A3/A4 e orientação antes de baixar.
+- Textos e parâmetros com mais contraste. Zoom abaixo de 45% mostra identificações resumidas; entre 45% e 80%, nomes sem parâmetros; a partir de 80%, detalhes completos. O item selecionado mantém seus detalhes. Os níveis mudam apenas nas transições dessas faixas.
+- Barras de ferramentas e seleção em uma faixa própria acima do canvas, sem cobrir equipamentos. Ao selecionar um cabo, aparecem ações de desenho nessa faixa.
+- Destacar circuito completo pela barra ou Mostrar alimentação no inspector: evidencia a ramificação até a origem, suaviza os demais itens e permite sair do destaque sem editar o projeto. Observações oferecem Localizar ou Ver propriedades; exclusões oferecem Desfazer na mensagem.
+- Cabos com até 20 pontos de dobra, rótulos arrastáveis e ajustes com setas/Shift+setas. Delete sobre uma dobra a remove; Esc cancela um arraste. Restaurar trajeto e rótulo volta ao desenho automático. Os ajustes são reversíveis e salvos no JSON; não alteram o comprimento elétrico. Cópias e movimentações de conjuntos trasladam as dobras dos cabos internos.
+- Visão geral dos projetos pelo ícone de pasta no topo: miniaturas esquemáticas, datas, contagens, busca sem acentos, ordenação, abrir, criar, renomear e exportar JSON. Miniaturas de projetos grandes amostram os elementos para limitar o custo da lista.
 
 ## Tutorial e tour guiado
 
@@ -47,7 +52,7 @@ O tour usa [Driver.js](https://driverjs.com/), carregado sob demanda, com textos
 
 ## Exportação visual
 
-PNG e PDF são gerados no navegador. O desenho usa os mesmos símbolos SVG da biblioteca, posições absolutas dos filhos de painéis, conexões ortogonais e rótulos de equipamentos/cabos. O PNG utiliza escala 3×, limitada a 8.192 pixels por lado e 16 megapixels para controlar memória; diagramas muito extensos recebem uma resolução menor e o editor informa esse ajuste. O PDF incorpora essa imagem em uma folha A3, com orientação automática e proporção preservada. É uma exportação visual, sem memorial técnico ou objetos CAD editáveis.
+PNG e PDF são gerados no navegador. O desenho usa os mesmos símbolos SVG da biblioteca, posições absolutas dos filhos de painéis e a geometria dos cabos, incluindo suas dobras e rótulos reposicionados. O PNG utiliza escala 3×, limitada a 8.192 pixels por lado e 16 megapixels; diagramas muito extensos recebem uma resolução menor e o editor informa esse ajuste. O PDF incorpora essa imagem em uma folha A3 ou A4, com orientação automática/retrato/paisagem e margem escolhida. A prévia usa as mesmas opções e preserva a proporção da folha. É uma exportação visual, sem memorial técnico ou objetos CAD editáveis.
 
 Não há upload para gerar os arquivos. JSON continua sendo o formato de backup e edição. Projetos vazios permitem exportar JSON, mas orientam adicionar um equipamento antes de habilitar PNG/PDF. A geração visual impede disparos simultâneos e informa falhas sem bloquear o editor.
 
@@ -71,6 +76,8 @@ Esta fase não implementa verificação normativa IEC/NBR, ampacidade, seletivid
 ## Arquivos JSON
 
 Formato `ampai-project`, versão `1.0.0`, extensão `.json`. O arquivo contém identificação, nome, datas, nós com coordenadas e propriedades, hierarquia dos painéis, arestas `from`/`to` e viewport. A classe de tensão é o campo opcional de entrada `properties.voltage_class` dos cabos, normalizado para `UNSPECIFIED` quando ausente. A viewport pode incluir as dimensões da área de trabalho para adaptar o enquadramento ao abrir o projeto em outra tela. O projeto exemplo está em `public/exemplo-industrial.json`.
+
+O campo opcional `layout` dos cabos armazena `waypoints` (coordenadas absolutas, até 20 pontos) e `labelOffset` (deslocamento relativo do texto). Arquivos antigos continuam válidos. Os ajustes de desenho preservam o cache dos cálculos. Diagramas grandes com trajetos manuais usam visibilidade por limites do desenho, incluindo dobras e rótulos, para manter cabos que cruzam a tela mesmo quando suas pontas estão fora dela.
 
 O importador rejeita propriedades fora do intervalo, IDs duplicados, referências inexistentes, pais inválidos, ciclos e dupla alimentação. Limites: 10 MB por importação, 2.000 equipamentos e 5.000 cabos por arquivo, 100 projetos locais.
 

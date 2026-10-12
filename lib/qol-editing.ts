@@ -4,6 +4,7 @@ import {
   clampEquipmentPosition,
   equipmentSize,
   positionLockedIds,
+  withMovedCableLayouts,
 } from "./geometry";
 
 export const arrangementActions = [
@@ -94,7 +95,7 @@ export function arrangeSelection(
   });
   return next.every((n, i) => n === project.nodes[i])
     ? project
-    : { ...project, nodes: next };
+    : withMovedCableLayouts(project, next);
 }
 
 export function setPositionLock(

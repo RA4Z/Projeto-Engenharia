@@ -2514,3 +2514,507 @@ a {
     flex-direction: column;
   }
 }
+
+/* Clearer text and a dock that reserves its own space above the drawing. */
+:root {
+  --muted: #52675b;
+}
+.canvas-controls-dock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #fff;
+  border-bottom: 1px solid #d3dfd6;
+  flex-shrink: 0;
+}
+.canvas-controls-dock .canvas-toolbar,
+.canvas-controls-dock .selection-actions {
+  position: static;
+  transform: none;
+  left: auto;
+  top: auto;
+  margin: 0;
+  max-width: 100%;
+  box-shadow: none;
+}
+.canvas-controls-dock .canvas-toolbar {
+  padding: 3px 5px;
+}
+.canvas-controls-dock .selection-actions {
+  flex-wrap: wrap;
+}
+.canvas-controls-dock .selection-actions > span {
+  font-size: 12px;
+  color: #355e46;
+}
+.circuit-focus-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  color: #196544;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #edf5e8;
+  border-radius: 6px;
+}
+.circuit-focus-chip button {
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 4px;
+}
+.cable-actions-dock {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  width: 100%;
+  font-size: 12px;
+}
+.cable-actions-dock > span {
+  font-weight: 600;
+  color: #214c3a;
+}
+.cable-actions-dock button {
+  padding: 6px 9px;
+  min-height: 30px;
+  font-size: 12px;
+}
+.cable-actions-dock small {
+  color: #53695c;
+}
+.node-label {
+  color: #183b2b;
+  font-size: 14px;
+  font-weight: 600;
+}
+.node-detail {
+  color: #4b6255;
+  font-size: 12px;
+}
+.tree-element,
+.cable-tree-row {
+  font-size: 13px;
+}
+.tree-row.child .tree-element {
+  font-size: 12px;
+}
+.cable-tree-row small {
+  color: #b9d0bf;
+  font-size: 11px;
+}
+.property-field > span {
+  color: #3b5546;
+  font-size: 12px;
+}
+.property-field input,
+.property-field select {
+  font-size: 14px;
+  color: #233e2e;
+}
+.muted-text,
+.inspector-tip p,
+.canvas-bottom .canvas-hint {
+  color: #52675b;
+}
+.section-eyebrow {
+  color: #52675b;
+}
+.equipment-node[data-detail="0"] .node-detail,
+.equipment-node[data-detail="1"] .node-detail,
+.panel-node[data-detail="0"] .panel-node-caption {
+  visibility: hidden;
+}
+.equipment-node[data-detail="0"] .node-label {
+  font-size: 30px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.equipment-node[data-detail="1"] .node-label {
+  font-size: 18px;
+}
+.panel-node[data-detail="0"] .panel-node-header > span:last-child {
+  visibility: hidden;
+}
+.panel-node[data-detail="0"] .panel-node-title {
+  font-size: 22px;
+}
+.cable-label {
+  position: absolute;
+  padding: 4px 7px;
+  max-width: 320px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: #fffffff2;
+  color: #355d48;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cable-label.selected {
+  color: #145d42;
+  border-color: #91bda5;
+  cursor: move;
+  touch-action: none;
+}
+.cable-label:focus-visible {
+  outline: 2px solid #1d7c58;
+}
+.cable-waypoint {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 2px solid #1b7b55;
+  background: #fff;
+  border-radius: 4px;
+  cursor: move;
+  touch-action: none;
+}
+.cable-waypoint:focus-visible {
+  outline: 3px solid #a7c8b4;
+  outline-offset: 3px;
+}
+.cable-inspector-actions {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.cable-inspector-actions p {
+  margin: 0;
+}
+.toast .toast-action {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 6px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.ux-backdrop {
+  z-index: 100;
+  padding: 20px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.ux-dialog {
+  width: min(1000px, calc(100vw - 40px));
+  max-height: calc(100dvh - 40px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 20px 80px #13392633;
+  overflow: hidden;
+  color: #294733;
+}
+.ux-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 24px 10px;
+}
+.ux-dialog-header h2 {
+  font-size: 20px;
+}
+.dialog-description {
+  font-size: 13px;
+  color: #52695a;
+  margin: 0;
+  padding: 0 24px 16px;
+}
+.ux-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding: 16px 24px;
+  border-top: 1px solid #dce5dd;
+}
+.export-preview-grid {
+  display: grid;
+  grid-template-columns: 255px minmax(0, 1fr);
+  min-height: 0;
+  overflow-y: auto;
+}
+.export-settings {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 8px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.export-settings > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #405744;
+}
+.export-settings input:not([type="checkbox"]),
+.export-settings select,
+.projects-controls select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #c1d2c5;
+  border-radius: 7px;
+  background: #fff;
+  color: #294733;
+  font-size: 13px;
+}
+.export-settings .export-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.preview-surface {
+  background: #e9eeeb;
+  padding: 24px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.export-paper {
+  width: 100%;
+  max-height: 450px;
+  background: #fff;
+  box-shadow: 0 3px 20px #143b2326;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.export-paper img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+}
+.preview-surface p {
+  color: #455f4c;
+  font-size: 12px;
+  margin: 0;
+}
+.export-error {
+  color: #a32d35;
+  font-size: 13px;
+  margin: 0;
+  padding: 12px 24px;
+}
+.projects-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 24px 16px;
+}
+.projects-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid #bfcec1;
+  border-radius: 7px;
+  flex: 1;
+  min-width: 0;
+}
+.projects-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  font-size: 14px;
+}
+.projects-controls select {
+  width: auto;
+}
+.project-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  padding: 0 24px 24px;
+  overflow-y: auto;
+}
+.project-card {
+  border: 1px solid #cbdace;
+  border-radius: 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+.project-card.active {
+  border: 2px solid #5d9d77;
+}
+.project-open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  gap: 12px;
+}
+.project-open svg {
+  width: 100%;
+  height: 145px;
+  background: #f3f7f2;
+}
+.project-open strong {
+  font-size: 15px;
+  padding: 0 14px;
+  overflow-wrap: anywhere;
+}
+.project-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  color: #536859;
+  font-size: 12px;
+}
+.project-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-top: 1px solid #e2e9e1;
+}
+.project-card-actions span {
+  flex: 1;
+  font-size: 11px;
+  color: #26734e;
+}
+.project-card-actions button {
+  padding: 6px;
+  color: #46694e;
+}
+.projects-empty {
+  font-size: 14px;
+  padding: 24px 0;
+}
+@media (max-width: 650px) {
+  .canvas-controls-dock {
+    gap: 5px;
+    padding: 5px 8px;
+  }
+  .canvas-controls-dock .canvas-toolbar button {
+    width: 33px;
+  }
+  .canvas-controls-dock .selection-actions > span {
+    max-width: 90px;
+  }
+  .ux-backdrop {
+    padding: 12px;
+  }
+  .ux-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+  .ux-dialog-header,
+  .ux-dialog-footer {
+    padding: 14px 16px;
+  }
+  .export-preview-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .export-settings {
+    padding: 8px 16px;
+  }
+  .preview-surface {
+    padding: 16px;
+    min-height: 220px;
+  }
+  .export-paper {
+    max-height: 320px;
+  }
+  .projects-controls {
+    flex-wrap: wrap;
+    padding: 0 16px 16px;
+  }
+  .projects-search {
+    flex-basis: 100%;
+  }
+  .project-cards {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0 16px 16px;
+  }
+  .dialog-description {
+    padding: 0 16px 14px;
+  }
+}
+.export-paper {
+  width: min(100%, calc(var(--preview-height, 450px) * var(--paper-ratio, 1)));
+  max-height: none;
+}
+.panel-node-header {
+  color: #425f49;
+  font-size: 12px;
+}
+.panel-node-title {
+  font-size: 14px;
+  color: #315e3e;
+}
+@media (max-width: 650px) {
+  .export-paper {
+    --preview-height: 320px;
+    max-height: none;
+  }
+}
+.canvas-area .react-flow__edgelabel-renderer {
+  z-index: 1002;
+}
+.cable-label {
+  z-index: 1;
+}
+.cable-label.selected {
+  z-index: 2;
+}
+.cable-waypoint {
+  z-index: 3;
+}
+.export-paper {
+  position: relative;
+  display: block;
+  padding: 0;
+  min-height: 0;
+  flex-shrink: 0;
+}
+.export-paper-inner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  box-sizing: border-box;
+  min-height: 0;
+  min-width: 0;
+}
+.issue {
+  flex-wrap: wrap;
+  text-align: left;
+}
+.issue > span {
+  flex: 1;
+  min-width: 0;
+}
+.issue-actions {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  padding-left: 23px;
+}
+.issue-actions button {
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+/* Header menus must stay above the mobile side panels. */
+.topbar {
+  z-index: 40;
+}

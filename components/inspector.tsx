@@ -165,6 +165,10 @@ export default function Inspector({
   onBatchUpdate,
   onLock,
   inert,
+  onTrace,
+  onResetCable,
+  onAddBend,
+  onLocate,
 }: {
   project: Project;
   analysis: Analysis;
@@ -186,6 +190,10 @@ export default function Inspector({
   onBatchUpdate: (patch: Properties) => void;
   onLock: (locked: boolean) => void;
   inert?: boolean;
+  onTrace?: (id: string) => void;
+  onResetCable?: (id: string) => void;
+  onAddBend?: (id: string) => void;
+  onLocate?: (id: string) => void;
 }) {
   const node = project.nodes.find((n) => n.id === selection),
     edge = project.edges.find((e) => e.id === selection);
@@ -287,10 +295,9 @@ export default function Inspector({
               </div>
             ) : (
               analysis.issues.map((issue, i) => (
-                <button
+                <div
                   className={`issue ${issue.severity}`}
                   key={`${issue.id}-${i}`}
-                  onClick={() => onSelect(issue.id)}
                 >
                   {issue.severity === "warning" ? (
                     <TriangleAlert size={16} />
@@ -298,7 +305,15 @@ export default function Inspector({
                     <Info size={16} />
                   )}
                   <span>{issue.message}</span>
-                </button>
+                  <div className="issue-actions">
+                    <button onClick={() => (onLocate ?? onSelect)(issue.id)}>
+                      Localizar
+                    </button>
+                    <button onClick={() => onSelect(issue.id)}>
+                      Ver propriedades
+                    </button>
+                  </div>
+                </div>
               ))
             )}
             <div className="section-title">
@@ -533,6 +548,38 @@ export default function Inspector({
                 <span>
                   {project.nodes.find((n) => n.id === edge.to)?.label}
                 </span>
+              </div>
+            )}
+            {onTrace && node?.type !== "PANEL" && (
+              <button
+                className="secondary-button full-width"
+                onClick={() => onTrace(item.id)}
+              >
+                <Zap size={15} />
+                Mostrar alimentação
+              </button>
+            )}
+            {edge && onAddBend && (
+              <div className="cable-inspector-actions">
+                <div className="section-title">Desenho do cabo</div>
+                <p className="muted-text">
+                  Adicione uma dobra e arraste o ponto no desenho. O comprimento
+                  elétrico é editado separadamente.
+                </p>
+                <button
+                  className="secondary-button full-width"
+                  disabled={(edge.layout?.waypoints?.length ?? 0) >= 20}
+                  onClick={() => onAddBend(edge.id)}
+                >
+                  Adicionar dobra
+                </button>
+                <button
+                  className="secondary-button full-width"
+                  disabled={!edge.layout}
+                  onClick={() => onResetCable?.(edge.id)}
+                >
+                  Restaurar trajeto e rótulo
+                </button>
               </div>
             )}
             <div className="section-title">Parâmetros elétricos</div>

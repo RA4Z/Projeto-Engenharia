@@ -1,5 +1,6 @@
 import { uid, type Equipment, type Cable, type Project } from "./project";
 import { equipmentSize, finishEquipmentDrag } from "./geometry";
+import { shiftCableLayout } from "./cable-path";
 
 export function updateProjectItem(
   project: Project,
@@ -91,7 +92,11 @@ export function captureSelection(
     }),
     edges: project.edges
       .filter((e) => includedIds.has(e.from) && includedIds.has(e.to))
-      .map((e) => ({ ...e, properties: { ...e.properties } })),
+      .map((e) => ({
+        ...e,
+        ...(e.layout ? { layout: shiftCableLayout(e.layout, 0, 0) } : {}),
+        properties: { ...e.properties },
+      })),
   };
 }
 
@@ -218,6 +223,7 @@ export function insertFragment(
       label,
       from: mapping.get(e.from)!,
       to: mapping.get(e.to)!,
+      ...(e.layout ? { layout: shiftCableLayout(e.layout, dx, dy) } : {}),
       properties: { ...e.properties },
     };
   });

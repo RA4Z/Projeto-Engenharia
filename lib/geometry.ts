@@ -1,4 +1,44 @@
 import type { Equipment, Project } from "./project";
+import { shiftCableLayout } from "./cable-path";
+
+export function withMovedCableLayouts(
+  project: Project,
+  nodes: Equipment[],
+): Project {
+  const old = new Map(project.nodes.map((n) => [n.id, n])),
+    next = new Map(nodes.map((n) => [n.id, n]));
+  const delta = (id: string) => {
+    const a = old.get(id)!,
+      b = next.get(id)!;
+    return {
+      x:
+        b.position.x +
+        (b.parentId ? next.get(b.parentId)!.position.x : 0) -
+        a.position.x -
+        (a.parentId ? old.get(a.parentId)!.position.x : 0),
+      y:
+        b.position.y +
+        (b.parentId ? next.get(b.parentId)!.position.y : 0) -
+        a.position.y -
+        (a.parentId ? old.get(a.parentId)!.position.y : 0),
+    };
+  };
+  const edges = project.edges.map((e) => {
+    if (!e.layout?.waypoints?.length) return e;
+    const a = delta(e.from),
+      b = delta(e.to);
+    return (a.x || a.y) && a.x === b.x && a.y === b.y
+      ? { ...e, layout: shiftCableLayout(e.layout, a.x, a.y) }
+      : e;
+  });
+  return {
+    ...project,
+    nodes,
+    edges: edges.every((e, i) => e === project.edges[i])
+      ? project.edges
+      : edges,
+  };
+}
 
 /** React Flow requires a parent to be present before any of its children. */
 export function parentsFirst(nodes: Equipment[]): Equipment[] {
@@ -130,7 +170,7 @@ export function finishEquipmentDrag(
   });
   return nodes.every((node, i) => node === project.nodes[i])
     ? project
-    : { ...project, nodes: parentsFirst(nodes) };
+    : withMovedCableLayouts(project, parentsFirst(nodes));
 }
 
 export function sameViewport(a: Project["viewport"], b: Project["viewport"]) {

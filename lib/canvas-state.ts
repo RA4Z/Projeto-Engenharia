@@ -213,6 +213,7 @@ export function syncCanvasEdges(
       edge.target === cable.to &&
       edge.sourceHandle === sourceHandle &&
       edge.label === label &&
+      edge.data?.cable === cable &&
       Boolean(edge.selected) === isSelected &&
       edge.style?.strokeWidth === (isSelected ? 2.4 : 1.5) &&
       edge.labelStyle?.fill === (isSelected ? "#187a60" : "#788486")
@@ -224,14 +225,15 @@ export function syncCanvasEdges(
       target: cable.to,
       sourceHandle,
       targetHandle: "in",
-      type: "smoothstep",
+      type: "engineering",
+      data: { cable },
       selected: isSelected,
       label,
       style: {
         stroke: isSelected ? "#21856b" : "#809497",
         strokeWidth: isSelected ? 2.4 : 1.5,
       },
-      labelStyle: { fontSize: 10, fill: isSelected ? "#187a60" : "#788486" },
+      labelStyle: { fontSize: 12, fill: isSelected ? "#187a60" : "#788486" },
       labelBgStyle: { fill: "#f9fbf9", fillOpacity: 0.95 },
       labelBgPadding: [5, 3] as [number, number],
       labelBgBorderRadius: 4,
