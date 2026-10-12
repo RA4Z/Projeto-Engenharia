@@ -18,6 +18,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import "driver.js/dist/driver.css";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -90,6 +91,13 @@ import { editorAction } from "@/lib/shortcuts";
 import { fileStem } from "@/lib/files";
 import Inspector from "./inspector";
 import Symbol from "./symbol";
+import GuidedTour from "./guided-tour";
+import LearningCenter from "./learning-center";
+import {
+  rememberOnboarding,
+  shouldOfferTour,
+  type TourPanel,
+} from "@/lib/onboarding";
 
 type Modal =
   | { type: "create" | "rename"; name: string }
@@ -116,6 +124,14 @@ function WorkspaceInner() {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [tab, setTab] = useState<"properties" | "analysis">("properties");
   const [modal, setModal] = useState<Modal>(null);
+  const [tourActive, setTourActive] = useState(false);
+  const [welcome, setWelcome] = useState(false);
+  const tourLayout = useRef<{
+    leftOpen: boolean;
+    rightOpen: boolean;
+    tab: "properties" | "analysis";
+    focus: HTMLElement | null;
+  } | null>(null);
   const [toast, setToast] = useState<{
     message: string;
     error?: boolean;
@@ -149,6 +165,78 @@ function WorkspaceInner() {
     (message: string, error = false) => setToast({ message, error }),
     [],
   );
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      setWelcome(shouldOfferTour(localStorage));
+    } catch {
+      /* Storage can be unavailable. */
+    }
+  }, [ready]);
+  const dismissWelcome = () => {
+    setWelcome(false);
+    try {
+      rememberOnboarding(localStorage, "dismissed");
+    } catch {
+      /* Optional preference. */
+    }
+  };
+  const startTour = () => {
+    if (tourActive) return;
+    tourLayout.current = {
+      leftOpen,
+      rightOpen,
+      tab,
+      focus:
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null,
+    };
+    dismissWelcome();
+    setModal(null);
+    setExportOpen(false);
+    setTourActive(true);
+  };
+  const prepareTour = useCallback((panel?: TourPanel) => {
+    setLeftOpen(panel === "projects");
+    setRightOpen(panel === "properties" || panel === "analysis");
+    if (panel === "properties" || panel === "analysis") setTab(panel);
+  }, []);
+  const finishTour = useCallback(
+    (completed: boolean) => {
+      setTourActive(false);
+      const previous = tourLayout.current;
+      if (previous) {
+        setLeftOpen(previous.leftOpen);
+        setRightOpen(previous.rightOpen);
+        setTab(previous.tab);
+        requestAnimationFrame(() => {
+          const target = previous.focus?.isConnected
+            ? previous.focus
+            : document.querySelector<HTMLElement>('[data-tour="help"]');
+          target?.focus({ preventScroll: true });
+        });
+      }
+      if (completed) {
+        try {
+          rememberOnboarding(localStorage, "completed");
+        } catch {
+          /* Optional preference. */
+        }
+        notify(
+          "Tour concluído! O tutorial do primeiro circuito está na ajuda.",
+        );
+      }
+    },
+    [notify],
+  );
+  const tourError = useCallback(() => {
+    notify(
+      "Não foi possível abrir o tour. Consulte o tutorial na ajuda e tente novamente.",
+      true,
+    );
+    setModal({ type: "help" });
+  }, [notify]);
   useEffect(() => {
     if (!modal) return;
     const previous =
@@ -509,7 +597,7 @@ function WorkspaceInner() {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       const target = event.target;
-      if (modal || !(target instanceof HTMLElement)) return;
+      if (modal || tourActive || !(target instanceof HTMLElement)) return;
       const action = editorAction(event);
       if (
         event.repeat &&
@@ -629,6 +717,7 @@ function WorkspaceInner() {
     return () => window.removeEventListener("keydown", handle, true);
   }, [
     modal,
+    tourActive,
     mode,
     project,
     selection,
@@ -938,7 +1027,14 @@ function WorkspaceInner() {
   return (
     <div
       className={`workspace ${!leftOpen ? "left-closed" : ""} ${!rightOpen ? "right-closed" : ""}`}
+      inert={tourActive}
     >
+      <GuidedTour
+        active={tourActive}
+        onPrepare={prepareTour}
+        onExit={finishTour}
+        onError={tourError}
+      />
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">
@@ -971,12 +1067,14 @@ function WorkspaceInner() {
         <div className="topbar-actions">
           <button
             className="secondary-button import-button"
+            data-tour="import"
+            aria-label="Importar projeto JSON"
             onClick={() => inputRef.current?.click()}
           >
             <ArrowUpFromLine size={15} />
             Importar
           </button>
-          <div className="export-control" ref={exportRef}>
+          <div className="export-control" ref={exportRef} data-tour="export">
             <button
               className="primary-button"
               disabled={!!exporting}
@@ -1033,7 +1131,7 @@ function WorkspaceInner() {
           </button>
         </div>
       </header>
-      <aside className="left-sidebar">
+      <aside className="left-sidebar" data-tour="projects">
         <div className="sidebar-section-label">
           <span>SEU WORKSPACE</span>
           <button
@@ -1171,7 +1269,7 @@ function WorkspaceInner() {
             onClick={() => setModal({ type: "help" })}
           >
             <CircleHelp size={16} />
-            Guia e atalhos<kbd>?</kbd>
+            Tutorial e tour<kbd>?</kbd>
           </button>
         </div>
       </aside>
@@ -1218,7 +1316,7 @@ function WorkspaceInner() {
             </button>
           </div>
         </div>
-        <div className="library-bar">
+        <div className="library-bar" data-tour="library">
           <div className="library-label">
             <BookOpen size={15} />
             <span>Biblioteca</span>
@@ -1284,7 +1382,43 @@ function WorkspaceInner() {
             onViewport={saveViewport}
           />
 
-          <div className="canvas-toolbar">
+          {welcome && !modal && !tourActive && (
+            <section className="welcome-card" aria-label="Boas-vindas ao AmpAI">
+              <button
+                className="icon-button welcome-close"
+                aria-label="Dispensar boas-vindas"
+                onClick={dismissWelcome}
+              >
+                <X size={17} />
+              </button>
+              <span className="section-eyebrow">
+                SEU PRIMEIRO CIRCUITO COMEÇA AQUI
+              </span>
+              <h2>Conheça seu novo workspace.</h2>
+              <p>
+                Um passeio rápido pelos símbolos, conexões, cálculos e arquivos
+                do seu projeto.
+              </p>
+              <button className="primary-button full-width" onClick={startTour}>
+                Conhecer o editor <ChevronRight size={16} />
+              </button>
+              <div className="welcome-links">
+                <button
+                  onClick={() => {
+                    dismissWelcome();
+                    setModal({ type: "help" });
+                  }}
+                >
+                  Ler o tutorial
+                </button>
+                <button onClick={dismissWelcome}>
+                  Explorar por conta própria
+                </button>
+              </div>
+            </section>
+          )}
+
+          <div className="canvas-toolbar" data-tour="tools">
             <button
               className={mode === "select" ? "active" : ""}
               title="Selecionar e mover (V)"
@@ -1421,7 +1555,7 @@ function WorkspaceInner() {
             </div>
           )}
           <div className="canvas-bottom">
-            <div className="zoom-control">
+            <div className="zoom-control" data-tour="zoom">
               <button
                 aria-label="Diminuir zoom"
                 title="Diminuir zoom"
@@ -1475,6 +1609,7 @@ function WorkspaceInner() {
             </span>
             <button
               className="canvas-help"
+              data-tour="help"
               aria-label="Ajuda do editor"
               onClick={() => setModal({ type: "help" })}
             >
@@ -1601,79 +1736,10 @@ function WorkspaceInner() {
               <X size={19} />
             </button>
             {modal.type === "help" ? (
-              <>
-                <div className="modal-icon">
-                  <BookOpen size={25} />
-                </div>
-                <span className="section-eyebrow">BEM-VINDO AO AMPAI</span>
-                <h2 id="modal-title">Ideias que se conectam.</h2>
-                <p>
-                  Um workspace de engenharia elétrica, do primeiro equipamento
-                  ao circuito completo.
-                </p>
-                <div className="help-steps">
-                  <div>
-                    <b>01</b>
-                    <span>
-                      <strong>Monte seu diagrama</strong>Clique ou arraste
-                      símbolos da biblioteca. Solte dentro de um painel para
-                      criar subelementos.
-                    </span>
-                  </div>
-                  <div>
-                    <b>02</b>
-                    <span>
-                      <strong>Conecte e configure</strong>Arraste entre portas.
-                      Selecione equipamentos e cabos para editar parâmetros no
-                      painel de propriedades.
-                    </span>
-                  </div>
-                  <div>
-                    <b>03</b>
-                    <span>
-                      <strong>Leve seu trabalho com você</strong>Os projetos
-                      ficam neste navegador. Exporte JSON para backup ou importe
-                      para continuar em outro dispositivo.
-                    </span>
-                  </div>
-                </div>
-                <div className="shortcuts">
-                  {[
-                    ["V", "Selecionar"],
-                    ["H", "Navegar"],
-                    ["C", "Conectar"],
-                    ["F", "Enquadrar"],
-                    ["Shift + F", "Enquadrar seleção"],
-                    ["Ctrl + Z", "Desfazer"],
-                    ["Ctrl + Shift + Z", "Refazer"],
-                    ["Ctrl + D", "Duplicar"],
-                    ["Ctrl + C / V", "Copiar / colar equipamentos"],
-                    ["Ctrl + A", "Selecionar tudo"],
-                    ["Setas / Shift + setas", "Mover 1 / 10 px"],
-                    ["Esc", "Limpar seleção"],
-                    ["Delete", "Excluir"],
-                    ["Ctrl + S", "Exportar JSON"],
-                    ["Shift + arraste", "Selecionar área"],
-                  ].map(([key, name]) => (
-                    <div key={key}>
-                      <span>{name}</span>
-                      <kbd>{key}</kbd>
-                    </div>
-                  ))}
-                </div>
-                <p className="help-note">
-                  Modelo radial, sem circuitos fechados ou dupla alimentação. Os
-                  cálculos são preliminares; consulte suas premissas na aba
-                  Análise.
-                </p>
-                <button
-                  className="primary-button full-width"
-                  onClick={() => setModal(null)}
-                >
-                  Vamos projetar
-                  <ChevronRight size={16} />
-                </button>
-              </>
+              <LearningCenter
+                onTour={startTour}
+                onClose={() => setModal(null)}
+              />
             ) : modal.type === "delete" ? (
               <>
                 <div className="modal-icon danger">

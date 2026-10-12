@@ -34,6 +34,12 @@ O build gera `out/`, que pode ser hospedado em qualquer servidor de arquivos est
 - Classe de tensão dos cabos (U0/U) no inspector e no JSON. Projetos antigos continuam válidos e recebem "Não informada"; o editor não assume uma isolação para os cabos existentes.
 - Menu Exportar com projeto JSON, imagem PNG e diagrama PDF A3. A imagem é gerada a partir de todo o grafo, independentemente do zoom, da seleção e da posição da câmera, com fundo branco e sem controles do editor.
 
+## Tutorial e tour guiado
+
+Na primeira visita, um convite oferece um tour de 10 passos ou o tutorial do primeiro circuito. O convite pode ser dispensado e a preferência fica neste navegador, separada dos projetos. A ajuda do editor (botão `?`, guia na árvore ou atalho `?`) permite reabrir o tour, ler os seis passos do tutorial e consultar atalhos.
+
+O tour usa [Driver.js](https://driverjs.com/), carregado sob demanda, com textos e botões em português. Abre os painéis necessários a cada passo, permite avançar/voltar pelo teclado e encerrar com Esc. Durante o passeio, o editor fica protegido contra alterações; ao sair, os painéis e a aba anterior são restaurados. Nenhum equipamento, cabo, parâmetro ou seleção é modificado. O tour funciona também com projetos vazios e em telas pequenas, sem backend ou telemetria.
+
 ## Exportação visual
 
 PNG e PDF são gerados no navegador. O desenho usa os mesmos símbolos SVG da biblioteca, posições absolutas dos filhos de painéis, conexões ortogonais e rótulos de equipamentos/cabos. O PNG utiliza escala 3×, limitada a 8.192 pixels por lado e 16 megapixels para controlar memória; diagramas muito extensos recebem uma resolução menor e o editor informa esse ajuste. O PDF incorpora essa imagem em uma folha A3, com orientação automática e proporção preservada. É uma exportação visual, sem memorial técnico ou objetos CAD editáveis.

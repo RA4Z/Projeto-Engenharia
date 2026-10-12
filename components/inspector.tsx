@@ -182,7 +182,7 @@ export default function Inspector({
       ? analysis.cables.get(edge.id)
       : undefined;
   return (
-    <aside className="inspector">
+    <aside className="inspector" data-tour="inspector">
       <div className="inspector-tabs">
         <button
           className={tab === "properties" ? "active" : ""}
