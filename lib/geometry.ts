@@ -99,7 +99,64 @@ export function finishEquipmentDrag(
 }
 
 export function sameViewport(a: Project["viewport"], b: Project["viewport"]) {
-  return a.x === b.x && a.y === b.y && a.zoom === b.zoom;
+  return (
+    a.x === b.x &&
+    a.y === b.y &&
+    a.zoom === b.zoom &&
+    a.canvasWidth === b.canvasWidth &&
+    a.canvasHeight === b.canvasHeight
+  );
+}
+
+export function viewportNeedsFit(
+  viewport: Project["viewport"],
+  width: number,
+  height: number,
+) {
+  if (width <= 0 || height <= 0) return false;
+  if (!viewport.canvasWidth || !viewport.canvasHeight) return width < 570;
+  return (
+    Math.abs(viewport.canvasWidth - width) / viewport.canvasWidth > 0.25 ||
+    Math.abs(viewport.canvasHeight - height) / viewport.canvasHeight > 0.25
+  );
+}
+
+export function nextCableLabel(project: Project) {
+  const used = new Set(project.edges.map((edge) => edge.label));
+  let count = 1;
+  while (used.has(`C-${String(count).padStart(2, "0")}`)) count++;
+  return `C-${String(count).padStart(2, "0")}`;
+}
+
+export function reparentEquipment(
+  project: Project,
+  id: string,
+  parentId: string,
+): Project {
+  const node = project.nodes.find((n) => n.id === id);
+  if (!node || node.type === "PANEL" || (node.parentId ?? "") === parentId)
+    return project;
+  const parent = project.nodes.find((n) => n.id === node.parentId);
+  const nextParent = parentId
+    ? project.nodes.find((n) => n.id === parentId && n.type === "PANEL")
+    : undefined;
+  if (parentId && !nextParent) return project;
+  const { parentId: oldParent, ...base } = node;
+  const next = { ...base, ...(nextParent ? { parentId: nextParent.id } : {}) };
+  const position = clampEquipmentPosition(next, {
+    x:
+      node.position.x +
+      (parent?.position.x ?? 0) -
+      (nextParent?.position.x ?? 0),
+    y:
+      node.position.y +
+      (parent?.position.y ?? 0) -
+      (nextParent?.position.y ?? 0),
+  });
+  return {
+    ...project,
+    nodes: project.nodes.map((n) => (n.id === id ? { ...next, position } : n)),
+  };
 }
 
 export function nextEquipmentLabel(project: Project, type: Equipment["type"]) {

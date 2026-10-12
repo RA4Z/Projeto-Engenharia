@@ -3,11 +3,13 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type DragEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   ReactFlowProvider,
   type Connection,
@@ -61,7 +63,7 @@ import {
   createEquipment,
   createProject,
   deleteItems,
-  parseProject,
+  parseProjectText,
   serializeProject,
   STORAGE_KEY,
   uid,
@@ -72,6 +74,9 @@ import {
   clampEquipmentPosition,
   sameViewport,
   nextEquipmentLabel,
+  nextCableLabel,
+  reparentEquipment,
+  viewportNeedsFit,
 } from "@/lib/geometry";
 import DiagramCanvas from "./diagram-canvas";
 import { restoreWorkspace } from "@/lib/workspace-storage";
@@ -82,6 +87,7 @@ import {
   type SelectionFragment,
 } from "@/lib/editing";
 import { editorAction } from "@/lib/shortcuts";
+import { fileStem } from "@/lib/files";
 import Inspector from "./inspector";
 import Symbol from "./symbol";
 
@@ -121,14 +127,19 @@ function WorkspaceInner() {
   const [zoom, setZoom] = useState(1);
   const [newDemo, setNewDemo] = useState(false);
   const [clipboard, setClipboard] = useState<SelectionFragment | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState<"png" | "pdf" | null>(null);
+  const exportBusy = useRef(false);
+  const exportRef = useRef<HTMLDivElement>(null);
   const pasteCount = useRef(0);
   const importBusy = useRef(false);
   const latestProjects = useRef(projects);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latestProjects.current = projects;
   }, [projects]);
   const inputRef = useRef<HTMLInputElement>(null),
     canvasRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const project = projects.find((p) => p.projectId === activeId);
   const analysis = useMemo(
     () => (project ? analyze(project) : null),
@@ -138,6 +149,20 @@ function WorkspaceInner() {
     (message: string, error = false) => setToast({ message, error }),
     [],
   );
+  useEffect(() => {
+    if (!modal) return;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    (
+      modalRef.current?.querySelector<HTMLInputElement>("input") ??
+      modalRef.current?.querySelector<HTMLButtonElement>("button")
+    )?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [modal?.type]);
   useEffect(() => {
     setLeftOpen(window.innerWidth >= 800);
     setRightOpen(window.innerWidth >= 570);
@@ -198,10 +223,18 @@ function WorkspaceInner() {
     if (!project || !flow) return;
     const timer = setTimeout(() => {
       const v = project.viewport;
+      const box = canvasRef.current?.getBoundingClientRect();
       if (!project.nodes.length) {
         void flow.setViewport(v);
-      } else if (v.x === 0 && v.y === 0) {
-        void flow.fitView({ padding: 0.15, maxZoom: 0.8, duration: 0 });
+      } else if (
+        (v.x === 0 && v.y === 0) ||
+        (box && viewportNeedsFit(v, box.width, box.height))
+      ) {
+        void flow.fitView({
+          padding: { top: "80px", bottom: "65px", x: "35px" },
+          maxZoom: 0.8,
+          duration: 0,
+        });
       } else void flow.setViewport(v);
     }, 90);
     return () => clearTimeout(timer);
@@ -243,21 +276,29 @@ function WorkspaceInner() {
     [project, remember],
   );
   const saveViewport = useCallback((projectId: string, viewport: Viewport) => {
+    const box = canvasRef.current?.getBoundingClientRect();
+    const savedViewport =
+      box && box.width > 0 && box.height > 0
+        ? { ...viewport, canvasWidth: box.width, canvasHeight: box.height }
+        : viewport;
     setProjects((previous) => {
       let changed = false;
       const next = previous.map((item) => {
         if (
           item.projectId !== projectId ||
-          sameViewport(item.viewport, viewport)
+          sameViewport(item.viewport, savedViewport)
         )
           return item;
         changed = true;
-        return { ...item, viewport };
+        return { ...item, viewport: savedViewport };
       });
       return changed ? next : previous;
     });
   }, []);
-  const showProperties = useCallback(() => setTab("properties"), []);
+  const showProperties = useCallback(() => {
+    setTab("properties");
+    if (window.innerWidth < 570) setRightOpen(true);
+  }, []);
   const selectProject = (id: string) => {
     if (id === activeId) return;
     setActiveId(id);
@@ -273,7 +314,15 @@ function WorkspaceInner() {
       future: [project, ...history.future],
     });
     setProjects((prev) =>
-      prev.map((p) => (p.projectId === activeId ? previous : p)),
+      prev.map((p) =>
+        p.projectId === activeId
+          ? {
+              ...previous,
+              viewport: project.viewport,
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
     );
     setSelection([]);
   }, [project, history, activeId]);
@@ -285,7 +334,15 @@ function WorkspaceInner() {
       future: history.future.slice(1),
     });
     setProjects((prev) =>
-      prev.map((p) => (p.projectId === activeId ? next : p)),
+      prev.map((p) =>
+        p.projectId === activeId
+          ? {
+              ...next,
+              viewport: project.viewport,
+              updatedAt: new Date().toISOString(),
+            }
+          : p,
+      ),
     );
     setSelection([]);
   }, [project, history, activeId]);
@@ -295,19 +352,18 @@ function WorkspaceInner() {
     setSelection([]);
   }, [project, selection, commit]);
   const exportProject = useCallback(() => {
-    if (!project) return;
+    const current = latestProjects.current.find(
+      (item) => item.projectId === activeId,
+    );
+    if (!current) return;
     try {
-      const blob = new Blob([serializeProject(project)], {
+      const blob = new Blob([serializeProject(current)], {
         type: "application/json;charset=utf-8",
       });
       const url = URL.createObjectURL(blob),
         a = document.createElement("a");
       a.href = url;
-      a.download = `${project.name
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9-]/g, "-")
-        .toLowerCase()}.json`;
+      a.download = `${fileStem(current.name)}.json`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       notify("Projeto exportado em JSON.");
@@ -317,7 +373,57 @@ function WorkspaceInner() {
         true,
       );
     }
-  }, [project, notify]);
+  }, [activeId, notify]);
+  const exportVisual = useCallback(
+    async (format: "png" | "pdf") => {
+      if (!project || exportBusy.current) return;
+      exportBusy.current = true;
+      setExporting(format);
+      setExportOpen(false);
+      try {
+        const { exportDiagram } = await import("@/lib/diagram-export");
+        const result = await exportDiagram(project, format);
+        notify(
+          `Diagrama ${format.toUpperCase()} exportado (${result.width} × ${result.height} px).${result.reduced ? " Resolução ajustada ao tamanho do projeto." : ""}`,
+        );
+      } catch (error) {
+        notify(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível exportar o diagrama.",
+          true,
+        );
+      } finally {
+        exportBusy.current = false;
+        setExporting(null);
+      }
+    },
+    [project, notify],
+  );
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !exportRef.current?.contains(event.target)
+      )
+        setExportOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setExportOpen(false);
+        exportRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+      }
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", escape, true);
+    };
+  }, [exportOpen]);
   const duplicate = useCallback(() => {
     if (!project) return;
     try {
@@ -403,15 +509,29 @@ function WorkspaceInner() {
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       const target = event.target;
+      if (modal || !(target instanceof HTMLElement)) return;
+      const action = editorAction(event);
       if (
-        modal ||
-        !(target instanceof HTMLElement) ||
+        event.repeat &&
+        action &&
+        ["export", "copy", "paste", "duplicate"].includes(action)
+      ) {
+        event.preventDefault();
+        return;
+      }
+      if (
         target.closest(
           'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]',
         )
-      )
+      ) {
+        if (action === "export") {
+          event.preventDefault();
+          flushSync(() => target.blur());
+          exportProject();
+        }
         return;
-      const action = editorAction(event);
+      }
+      if (exportOpen && event.key === "Escape") return;
       if (!action) return;
       if (action === "nudge") {
         if (
@@ -487,7 +607,15 @@ function WorkspaceInner() {
           setMode("connect");
           break;
         case "fit":
-          void flow?.fitView({ padding: 0.22, maxZoom: 1, duration: 200 });
+          void flow?.fitView({
+            padding: {
+              top: selection.length ? "130px" : "80px",
+              bottom: "65px",
+              x: "40px",
+            },
+            maxZoom: 1,
+            duration: 200,
+          });
           break;
         case "fitSelection":
           fitSelection();
@@ -514,6 +642,7 @@ function WorkspaceInner() {
     fitSelection,
     removeSelection,
     flow,
+    exportOpen,
   ]);
 
   const connect = useCallback(
@@ -533,7 +662,7 @@ function WorkspaceInner() {
         from: connection.source,
         to: connection.target,
         sourceHandle: connection.sourceHandle ?? "out",
-        label: `C-${String(project.edges.length + 1).padStart(2, "0")}`,
+        label: nextCableLabel(project),
         properties: { ...cableDefaults },
       };
       commit({ ...project, edges: [...project.edges, cable] });
@@ -568,8 +697,12 @@ function WorkspaceInner() {
             x: box.left + box.width / 2,
             y: box.top + box.height / 2,
           }));
-    position.x = Math.round((position.x - 84) / 20) * 20;
-    position.y = Math.round((position.y - 40) / 20) * 20;
+    position.x = snap
+      ? Math.round((position.x - 84) / 20) * 20
+      : position.x - 84;
+    position.y = snap
+      ? Math.round((position.y - 40) / 20) * 20
+      : position.y - 40;
     const panel =
       type !== "PANEL"
         ? project.nodes.find(
@@ -638,32 +771,7 @@ function WorkspaceInner() {
     });
   };
   const changeParent = (id: string, parentId: string) => {
-    if (!project) return;
-    const node = project.nodes.find((n) => n.id === id)!;
-    const currentParent = project.nodes.find((n) => n.id === node.parentId),
-      nextParent = project.nodes.find((n) => n.id === parentId);
-    const absolute = {
-      x: node.position.x + (currentParent?.position.x ?? 0),
-      y: node.position.y + (currentParent?.position.y ?? 0),
-    };
-    const position = nextParent
-      ? {
-          x: Math.max(
-            0,
-            Math.min(
-              node.type === "BUSBAR" ? 320 : 440,
-              absolute.x - nextParent.position.x,
-            ),
-          ),
-          y: Math.max(44, Math.min(430, absolute.y - nextParent.position.y)),
-        }
-      : absolute;
-    commit({
-      ...project,
-      nodes: project.nodes.map((n) =>
-        n.id === id ? { ...n, parentId: parentId || undefined, position } : n,
-      ),
-    });
+    if (project) commit(reparentEquipment(project, id, parentId));
   };
   const focusItem = (id: string) => {
     setSelection([id]);
@@ -698,7 +806,7 @@ function WorkspaceInner() {
     }
     importBusy.current = true;
     try {
-      const imported = parseProject(JSON.parse(await file.text()));
+      const imported = parseProjectText(await file.text());
       if (
         latestProjects.current.some((p) => p.projectId === imported.projectId)
       ) {
@@ -868,10 +976,54 @@ function WorkspaceInner() {
             <ArrowUpFromLine size={15} />
             Importar
           </button>
-          <button className="primary-button" onClick={exportProject}>
-            <ArrowDownToLine size={15} />
-            Exportar JSON
-          </button>
+          <div className="export-control" ref={exportRef}>
+            <button
+              className="primary-button"
+              disabled={!!exporting}
+              aria-expanded={exportOpen}
+              aria-controls="export-options"
+              onClick={() => setExportOpen((v) => !v)}
+            >
+              <ArrowDownToLine size={15} />
+              {exporting ? `Gerando ${exporting.toUpperCase()}…` : "Exportar"}
+              <ChevronDown size={13} />
+            </button>
+            {exportOpen && (
+              <div
+                className="export-options"
+                id="export-options"
+                role="group"
+                aria-label="Formatos de exportação"
+              >
+                <button
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportProject();
+                  }}
+                >
+                  <strong>Projeto JSON</strong>
+                  <small>Backup e edição em outro dispositivo</small>
+                </button>
+                <button
+                  disabled={!project.nodes.length}
+                  onClick={() => void exportVisual("png")}
+                >
+                  <strong>Diagrama PNG</strong>
+                  <small>Imagem completa em alta resolução</small>
+                </button>
+                <button
+                  disabled={!project.nodes.length}
+                  onClick={() => void exportVisual("pdf")}
+                >
+                  <strong>Diagrama PDF</strong>
+                  <small>Folha A3 para imprimir ou compartilhar</small>
+                </button>
+                {!project.nodes.length && (
+                  <p>Adicione um equipamento para exportar o diagrama.</p>
+                )}
+              </div>
+            )}
+          </div>
           <button
             className="avatar"
             title="Workspace local"
@@ -1291,7 +1443,11 @@ function WorkspaceInner() {
                 title="Enquadrar diagrama (F)"
                 onClick={() =>
                   void flow?.fitView({
-                    padding: 0.22,
+                    padding: {
+                      top: selection.length ? "130px" : "80px",
+                      bottom: "65px",
+                      x: "40px",
+                    },
                     maxZoom: 1,
                     duration: 250,
                   })
@@ -1348,6 +1504,12 @@ function WorkspaceInner() {
                 <span className="amber-dot" />
                 Verificar circuito
               </>
+            ) : analysis.issues.length ? (
+              <>
+                <CircleHelp size={12} />
+                {analysis.issues.length}{" "}
+                {analysis.issues.length === 1 ? "observação" : "observações"}
+              </>
             ) : (
               <>
                 <CheckCircle2 size={12} />
@@ -1360,6 +1522,7 @@ function WorkspaceInner() {
       <Inspector
         project={project}
         analysis={analysis}
+        onClose={() => setRightOpen(false)}
         selection={selectedCount === 1 ? (selection[0] ?? null) : null}
         selectionSummary={
           selectedCount > 1
@@ -1408,6 +1571,7 @@ function WorkspaceInner() {
         >
           <div
             className={`modal ${modal.type === "help" ? "help-modal" : ""}`}
+            ref={modalRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="modal-title"
@@ -1558,11 +1722,16 @@ function WorkspaceInner() {
                   <input
                     className="text-input"
                     aria-label="Nome do projeto"
-                    autoFocus
                     placeholder="Ex.: Subestação · Unidade 02"
                     maxLength={100}
                     required
                     value={modal.name}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && modal.name.trim()) {
+                        event.preventDefault();
+                        submitModal();
+                      }
+                    }}
                     onChange={(e) =>
                       setModal({ ...modal, name: e.target.value })
                     }

@@ -254,6 +254,7 @@ export const catalog: Record<EquipmentType, EquipmentDefinition> = {
   },
 };
 export const cableDefaults: Properties = {
+  voltage_class: "UNSPECIFIED",
   length_m: 25,
   section_mm2: 35,
   material: "CU",
@@ -262,6 +263,16 @@ export const cableDefaults: Properties = {
   parallel_runs: 1,
 };
 export const cableFields: Field[] = [
+  {
+    key: "voltage_class",
+    label: "Classe de tensão (U0/U)",
+    options: [
+      { value: "UNSPECIFIED", label: "Não informada" },
+      ...["0.6/1", "3.6/6", "6/10", "8.7/15", "12/20", "15/25", "20/35"].map(
+        (value) => ({ value, label: `${value.replaceAll(".", ",")} kV` }),
+      ),
+    ],
+  },
   {
     key: "length_m",
     label: "Comprimento",

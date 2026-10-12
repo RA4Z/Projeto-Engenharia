@@ -35,7 +35,13 @@ export type Project = {
   updatedAt: string;
   nodes: Equipment[];
   edges: Cable[];
-  viewport: { x: number; y: number; zoom: number };
+  viewport: {
+    x: number;
+    y: number;
+    zoom: number;
+    canvasWidth?: number;
+    canvasHeight?: number;
+  };
 };
 const idSchema = z.string().min(1).max(100);
 const propertiesSchema = z.record(
@@ -83,6 +89,8 @@ const projectSchema = z.object({
     x: z.number().finite().min(-1000000).max(1000000),
     y: z.number().finite().min(-1000000).max(1000000),
     zoom: z.number().finite().min(0.15).max(2.5),
+    canvasWidth: z.number().finite().min(1).max(100000).optional(),
+    canvasHeight: z.number().finite().min(1).max(100000).optional(),
   }),
 });
 export function uid(prefix = "item"): string {
@@ -336,6 +344,17 @@ export function parseProject(input: unknown): Project {
 }
 export function serializeProject(project: Project): string {
   return JSON.stringify(parseProject(project), null, 2);
+}
+export function parseProjectText(text: string): Project {
+  let input: unknown;
+  try {
+    input = JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error(
+      "O arquivo não contém um JSON válido. Escolha um projeto JSON exportado pelo AmpAI.",
+    );
+  }
+  return parseProject(input);
 }
 export function deleteItems(project: Project, ids: string[]): Project {
   const removed = new Set(ids);

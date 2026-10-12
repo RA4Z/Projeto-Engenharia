@@ -95,7 +95,10 @@ function PropertyField({
       )}
       {invalid && (
         <small className="field-error">
-          Informe um valor entre {field.min} e {field.max}.
+          {field.key === "parallel_runs"
+            ? "Informe um número inteiro"
+            : "Informe um valor"}{" "}
+          entre {field.min} e {field.max}.
         </small>
       )}
     </label>
@@ -148,6 +151,7 @@ export default function Inspector({
   onParent,
   onClear,
   onSelect,
+  onClose,
 }: {
   project: Project;
   analysis: Analysis;
@@ -164,6 +168,7 @@ export default function Inspector({
   onParent: (id: string, parentId: string) => void;
   onClear: () => void;
   onSelect: (id: string) => void;
+  onClose: () => void;
 }) {
   const node = project.nodes.find((n) => n.id === selection),
     edge = project.edges.find((e) => e.id === selection);
@@ -195,6 +200,14 @@ export default function Inspector({
           {analysis.issues.length > 0 && (
             <span className="count-badge">{analysis.issues.length}</span>
           )}
+        </button>
+        <button
+          className="inspector-close"
+          aria-label="Fechar propriedades"
+          title="Fechar painel de propriedades"
+          onClick={onClose}
+        >
+          <X size={16} />
         </button>
       </div>
       <div className="inspector-scroll">
