@@ -700,7 +700,6 @@ a {
   cursor: grab;
 }
 .canvas-area.canvas-mode-select .react-flow__node.dragging,
-.canvas-area.canvas-mode-pan .react-flow__pane.dragging,
 .canvas-area.canvas-mode-pan .react-flow__pane:active {
   cursor: grabbing;
 }
@@ -714,6 +713,11 @@ a {
 .canvas-area.canvas-mode-connect .react-flow__handle,
 .canvas-area.canvas-mode-select .react-flow__handle {
   cursor: crosshair;
+}
+.canvas-area .react-flow__pane.dragging,
+.canvas-area .react-flow__pane.dragging .react-flow__node,
+.canvas-area .react-flow__pane.dragging .react-flow__handle {
+  cursor: grabbing;
 }
 .react-flow__node-equipment {
   border: 0 !important;
