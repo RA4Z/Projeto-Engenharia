@@ -109,6 +109,7 @@ function DiagramCanvas(props: Props) {
       nodes={state.nodes}
       edges={state.edges}
       nodeTypes={nodeTypes}
+      onlyRenderVisibleElements={project.nodes.length > 200}
       onInit={onInit}
       onNodesChange={state.onNodesChange}
       onEdgesChange={state.onEdgesChange}

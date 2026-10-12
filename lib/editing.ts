@@ -1,7 +1,60 @@
 import { uid, type Equipment, type Cable, type Project } from "./project";
 import { equipmentSize, finishEquipmentDrag } from "./geometry";
 
+export function updateProjectItem(
+  project: Project,
+  id: string,
+  patch: Partial<Pick<Equipment, "label" | "properties">>,
+): Project {
+  const node = project.nodes.find((item) => item.id === id);
+  const original = node ?? project.edges.find((item) => item.id === id);
+  if (!original) return project;
+  const properties = patch.properties ?? original.properties;
+  const unchanged =
+    (patch.label === undefined || patch.label === original.label) &&
+    (properties === original.properties ||
+      (Object.keys(properties).length ===
+        Object.keys(original.properties).length &&
+        Object.entries(properties).every(
+          ([key, value]) => value === original.properties[key],
+        )));
+  if (unchanged) return project;
+  const next = {
+    ...original,
+    label: patch.label ?? original.label,
+    properties,
+  };
+  return node
+    ? {
+        ...project,
+        nodes: project.nodes.map((item) =>
+          item.id === id ? (next as Equipment) : item,
+        ),
+      }
+    : {
+        ...project,
+        edges: project.edges.map((item) =>
+          item.id === id ? (next as Cable) : item,
+        ),
+      };
+}
+
 export type SelectionFragment = { nodes: Equipment[]; edges: Cable[] };
+
+export function selectionEquipmentIds(
+  project: Project,
+  selection: string[],
+): string[] {
+  const ids = new Set(selection);
+  for (const edge of project.edges)
+    if (ids.has(edge.id)) {
+      ids.add(edge.from);
+      ids.add(edge.to);
+    }
+  return project.nodes
+    .filter((node) => ids.has(node.id))
+    .map((node) => node.id);
+}
 
 /** Snapshot a selection, including panel contents and only its internal cables. */
 export function captureSelection(

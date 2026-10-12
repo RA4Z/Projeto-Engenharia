@@ -224,15 +224,16 @@ export function connectionError(
 ): string | null {
   const source = project.nodes.find((n) => n.id === from),
     target = project.nodes.find((n) => n.id === to);
-  if (!source || !target) return "Os equipamentos da conexão não existem.";
-  if (from === to) return "Conecte dois equipamentos diferentes.";
-  if (
-    ["PANEL", "LOAD", "MOTOR"].includes(source.type) ||
-    ["PANEL", "SOURCE", "GENERATOR"].includes(target.type)
-  )
-    return "Esses equipamentos não têm portas compatíveis.";
+  const error = endpointError(source, target);
+  if (error) return error;
   if (project.edges.some((e) => e.to === to))
     return "O equipamento já tem uma alimentação. Este modelo utiliza circuitos radiais.";
+  const outgoing = new Map<string, string[]>();
+  for (const edge of project.edges) {
+    const children = outgoing.get(edge.from) ?? [];
+    children.push(edge.to);
+    outgoing.set(edge.from, children);
+  }
   const pending = [to],
     visited = new Set<string>();
   while (pending.length) {
@@ -241,9 +242,19 @@ export function connectionError(
       return "Essa conexão criaria um circuito fechado. Use uma topologia radial.";
     if (visited.has(id)) continue;
     visited.add(id);
-    for (const edge of project.edges)
-      if (edge.from === id) pending.push(edge.to);
+    pending.push(...(outgoing.get(id) ?? []));
   }
+  return null;
+}
+
+function endpointError(source?: Equipment, target?: Equipment): string | null {
+  if (!source || !target) return "Os equipamentos da conexão não existem.";
+  if (source.id === target.id) return "Conecte dois equipamentos diferentes.";
+  if (
+    ["PANEL", "LOAD", "MOTOR"].includes(source.type) ||
+    ["PANEL", "SOURCE", "GENERATOR"].includes(target.type)
+  )
+    return "Esses equipamentos não têm portas compatíveis.";
   return null;
 }
 function validateProperties(
@@ -281,6 +292,7 @@ export function parseProject(input: unknown): Project {
       "JSON inválido ou formato incompatível. Importe um projeto AmpAI na versão 1.0.0.",
     );
   const project: Project = parsed.data;
+  const nodesById = new Map(project.nodes.map((node) => [node.id, node]));
   const ids = new Set<string>();
   for (const node of project.nodes) {
     if (ids.has(node.id))
@@ -293,7 +305,7 @@ export function parseProject(input: unknown): Project {
       node.label,
     );
     if (node.parentId) {
-      const parent = project.nodes.find((n) => n.id === node.parentId);
+      const parent = nodesById.get(node.parentId);
       if (
         !parent ||
         parent.type !== "PANEL" ||
@@ -310,21 +322,23 @@ export function parseProject(input: unknown): Project {
         throw new Error("Um subelemento está fora dos limites do painel.");
     }
   }
-  const checked: Cable[] = [];
+  const incoming = new Set<string>();
+  const outgoing = new Map<string, string[]>();
   for (const edge of project.edges) {
     if (ids.has(edge.id))
       throw new Error("O projeto contém identificadores duplicados.");
     ids.add(edge.id);
-    const error = connectionError(
-      { nodes: project.nodes, edges: checked },
-      edge.from,
-      edge.to,
-    );
+    const source = nodesById.get(edge.from);
+    const error = endpointError(source, nodesById.get(edge.to));
     if (error) throw new Error(error);
-    const source = project.nodes.find((n) => n.id === edge.from)!;
+    if (incoming.has(edge.to))
+      throw new Error(
+        "O equipamento já tem uma alimentação. Este modelo utiliza circuitos radiais.",
+      );
+    incoming.add(edge.to);
     if (
       edge.sourceHandle &&
-      (source.type === "BUSBAR"
+      (source!.type === "BUSBAR"
         ? !["out-1", "out-2", "out-3", "out-4"].includes(edge.sourceHandle)
         : edge.sourceHandle !== "out")
     )
@@ -335,8 +349,21 @@ export function parseProject(input: unknown): Project {
       cableFields,
       edge.label || "Cabo",
     );
-    checked.push(edge);
+    const children = outgoing.get(edge.from) ?? [];
+    children.push(edge.to);
+    outgoing.set(edge.from, children);
   }
+  // Each node has at most one incoming cable. Walk all roots once; an unreached
+  // component must contain a cycle, regardless of the order of the input cables.
+  const reached = project.nodes
+    .filter((node) => !incoming.has(node.id))
+    .map((node) => node.id);
+  for (let i = 0; i < reached.length; i++)
+    reached.push(...(outgoing.get(reached[i]) ?? []));
+  if (reached.length !== project.nodes.length)
+    throw new Error(
+      "Essa conexão criaria um circuito fechado. Use uma topologia radial.",
+    );
   project.nodes.sort(
     (a, b) => Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)),
   );

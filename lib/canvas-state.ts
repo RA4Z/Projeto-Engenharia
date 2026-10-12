@@ -8,13 +8,25 @@ import {
 } from "@xyflow/react";
 import type { Equipment, Project } from "./project";
 import type { analyze, ElectricalResult } from "./calculations";
-import { equipmentSize } from "./geometry";
+import { equipmentSize, parentsFirst } from "./geometry";
+import { canvasGeometry } from "./canvas-geometry";
 
 export type Analysis = ReturnType<typeof analyze>;
 export type EquipmentFlowNode = Node<
   { equipment: Equipment; result?: ElectricalResult; warning: boolean },
   "equipment"
 >;
+
+function hasRepeatedIds(changes: { id?: string; item?: { id: string } }[]) {
+  const ids = new Set<string>();
+  for (const change of changes) {
+    const id = change.id ?? change.item?.id;
+    if (id === undefined) continue;
+    if (ids.has(id)) return true;
+    ids.add(id);
+  }
+  return false;
+}
 
 export function applySelectionChanges(
   previous: string[],
@@ -67,7 +79,11 @@ export function changeCanvasNodes(
       );
     return true;
   });
-  return useful.length ? applyNodeChanges(useful, previous) : previous;
+  // Changes for the same node must retain their order. A later change can undo
+  // an earlier one even when its value equals the state before the batch.
+  return useful.length
+    ? applyNodeChanges(hasRepeatedIds(changes) ? changes : useful, previous)
+    : previous;
 }
 
 export function changeCanvasEdges(
@@ -80,7 +96,9 @@ export function changeCanvasEdges(
       change.type !== "select" ||
       Boolean(edges.get(change.id)?.selected) !== change.selected,
   );
-  return useful.length ? applyEdgeChanges(useful, previous) : previous;
+  return useful.length
+    ? applyEdgeChanges(hasRepeatedIds(changes) ? changes : useful, previous)
+    : previous;
 }
 
 export function syncCanvasNodes(
@@ -96,7 +114,7 @@ export function syncCanvasNodes(
         .filter((issue) => issue.severity === "warning")
         .map((issue) => issue.id),
     );
-  const next = project.nodes.map((equipment) => {
+  const next = parentsFirst(project.nodes).map((equipment) => {
     const old = byId.get(equipment.id),
       result = analysis.nodeResults.get(equipment.id),
       warning = warnings.has(equipment.id),
@@ -136,6 +154,13 @@ export function syncCanvasNodes(
       selected: isSelected,
       dragging: false,
       style,
+      ...canvasGeometry(equipment.type),
+      measured:
+        old?.data.equipment.type === equipment.type &&
+        old.measured?.width !== undefined &&
+        old.measured?.height !== undefined
+          ? old.measured
+          : { width, height },
       data: { equipment, result, warning },
     };
   });
@@ -166,7 +191,9 @@ export function syncCanvasEdges(
       edge.target === cable.to &&
       edge.sourceHandle === sourceHandle &&
       edge.label === label &&
-      Boolean(edge.selected) === isSelected
+      Boolean(edge.selected) === isSelected &&
+      edge.style?.strokeWidth === (isSelected ? 2.4 : 1.5) &&
+      edge.labelStyle?.fill === (isSelected ? "#187a60" : "#788486")
     )
       return edge;
     return {

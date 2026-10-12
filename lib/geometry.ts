@@ -1,5 +1,20 @@
 import type { Equipment, Project } from "./project";
 
+/** React Flow requires a parent to be present before any of its children. */
+export function parentsFirst(nodes: Equipment[]): Equipment[] {
+  const indices = new Map(nodes.map((node, index) => [node.id, index]));
+  if (
+    !nodes.some(
+      (node, index) =>
+        node.parentId && (indices.get(node.parentId) ?? -1) > index,
+    )
+  )
+    return nodes;
+  return [...nodes].sort(
+    (a, b) => Number(Boolean(a.parentId)) - Number(Boolean(b.parentId)),
+  );
+}
+
 export function equipmentSize(type: Equipment["type"]) {
   return {
     width: type === "PANEL" ? 620 : type === "BUSBAR" ? 300 : 168,
@@ -95,7 +110,7 @@ export function finishEquipmentDrag(
   });
   return nodes.every((node, i) => node === project.nodes[i])
     ? project
-    : { ...project, nodes };
+    : { ...project, nodes: parentsFirst(nodes) };
 }
 
 export function sameViewport(a: Project["viewport"], b: Project["viewport"]) {
@@ -155,7 +170,9 @@ export function reparentEquipment(
   });
   return {
     ...project,
-    nodes: project.nodes.map((n) => (n.id === id ? { ...next, position } : n)),
+    nodes: parentsFirst(
+      project.nodes.map((n) => (n.id === id ? { ...next, position } : n)),
+    ),
   };
 }
 

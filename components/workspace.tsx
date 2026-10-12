@@ -58,7 +58,7 @@ import {
   type EquipmentType,
   type Properties,
 } from "@/lib/catalog";
-import { analyze, number } from "@/lib/calculations";
+import { number } from "@/lib/calculations";
 import {
   connectionError,
   createEquipment,
@@ -77,18 +77,22 @@ import {
   nextEquipmentLabel,
   nextCableLabel,
   reparentEquipment,
-  viewportNeedsFit,
 } from "@/lib/geometry";
 import DiagramCanvas from "./diagram-canvas";
+import { useProjectAnalysis } from "./use-project-analysis";
+import { useProjectViewport } from "./use-project-viewport";
 import { restoreWorkspace } from "@/lib/workspace-storage";
 import {
   captureSelection,
   insertFragment,
   nudgeSelection,
+  updateProjectItem,
+  selectionEquipmentIds,
   type SelectionFragment,
 } from "@/lib/editing";
 import { editorAction } from "@/lib/shortcuts";
 import { fileStem } from "@/lib/files";
+import { searchProjectItems } from "@/lib/project-search";
 import Inspector from "./inspector";
 import Symbol from "./symbol";
 import GuidedTour from "./guided-tour";
@@ -157,10 +161,26 @@ function WorkspaceInner() {
     canvasRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const project = projects.find((p) => p.projectId === activeId);
-  const analysis = useMemo(
-    () => (project ? analyze(project) : null),
-    [project?.nodes, project?.edges],
+  const focusNodes = useProjectViewport(project, flow, canvasRef);
+  const {
+    nodes: filteredNodes,
+    edges: filteredEdges,
+    query: searchQuery,
+  } = useMemo(
+    () => searchProjectItems(project, query),
+    [project?.nodes, project?.edges, query],
   );
+  const treeChildren = useMemo(() => {
+    const children = new Map<string, Project["nodes"]>();
+    for (const node of project?.nodes ?? []) {
+      if (!node.parentId) continue;
+      const members = children.get(node.parentId) ?? [];
+      members.push(node);
+      children.set(node.parentId, members);
+    }
+    return children;
+  }, [project?.nodes]);
+  const analysis = useProjectAnalysis(project);
   const notify = useCallback(
     (message: string, error = false) => setToast({ message, error }),
     [],
@@ -307,26 +327,6 @@ function WorkspaceInner() {
     const timer = setTimeout(() => setToast(null), 7000);
     return () => clearTimeout(timer);
   }, [toast]);
-  useEffect(() => {
-    if (!project || !flow) return;
-    const timer = setTimeout(() => {
-      const v = project.viewport;
-      const box = canvasRef.current?.getBoundingClientRect();
-      if (!project.nodes.length) {
-        void flow.setViewport(v);
-      } else if (
-        (v.x === 0 && v.y === 0) ||
-        (box && viewportNeedsFit(v, box.width, box.height))
-      ) {
-        void flow.fitView({
-          padding: { top: "80px", bottom: "65px", x: "35px" },
-          maxZoom: 0.8,
-          duration: 0,
-        });
-      } else void flow.setViewport(v);
-    }, 90);
-    return () => clearTimeout(timer);
-  }, [project?.projectId, flow]);
   useEffect(() => {
     const handler = () => {
       try {
@@ -577,15 +577,9 @@ function WorkspaceInner() {
   }, [project, clipboard, flow, commit, notify]);
   const fitSelection = useCallback(() => {
     if (!project || !flow) return;
-    const ids = new Set(selection);
-    for (const edge of project.edges)
-      if (ids.has(edge.id)) {
-        ids.add(edge.from);
-        ids.add(edge.to);
-      }
-    const nodes = project.nodes
-      .filter((n) => ids.has(n.id))
-      .map((n) => ({ id: n.id }));
+    const nodes = selectionEquipmentIds(project, selection).map((id) => ({
+      id,
+    }));
     if (nodes.length)
       void flow.fitView({
         nodes,
@@ -845,19 +839,7 @@ function WorkspaceInner() {
     patch: { label?: string; properties?: Properties },
   ) => {
     if (!project) return;
-    const original =
-      project.nodes.find((n) => n.id === id) ??
-      project.edges.find((e) => e.id === id);
-    if (
-      !original ||
-      JSON.stringify({ ...original, ...patch }) === JSON.stringify(original)
-    )
-      return;
-    commit({
-      ...project,
-      nodes: project.nodes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
-      edges: project.edges.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-    });
+    commit(updateProjectItem(project, id, patch));
   };
   const changeParent = (id: string, parentId: string) => {
     if (project) commit(reparentEquipment(project, id, parentId));
@@ -867,15 +849,7 @@ function WorkspaceInner() {
     setTab("properties");
     setRightOpen(true);
     if (window.innerWidth < 800) setLeftOpen(false);
-    const n = project?.nodes.find((n) => n.id === id);
-    if (n)
-      void flow?.fitView({
-        nodes: [{ id }],
-        padding: 0.8,
-        maxZoom: 0.9,
-        minZoom: 0.4,
-        duration: 250,
-      });
+    if (project) focusNodes(selectionEquipmentIds(project, [id]));
   };
   const importFile = async (file: File) => {
     if (importBusy.current) {
@@ -896,6 +870,10 @@ function WorkspaceInner() {
     importBusy.current = true;
     try {
       const imported = parseProjectText(await file.text());
+      if (latestProjects.current.length >= 100)
+        throw new Error(
+          "Limite de 100 projetos locais. Exporte e remova um projeto antes de importar.",
+        );
       if (
         latestProjects.current.some((p) => p.projectId === imported.projectId)
       ) {
@@ -974,11 +952,6 @@ function WorkspaceInner() {
         <span>Preparando seu workspace…</span>
       </div>
     );
-  const filteredNodes = project.nodes.filter(
-    (n) =>
-      n.label.toLowerCase().includes(query.toLowerCase()) ||
-      catalog[n.type].name.toLowerCase().includes(query.toLowerCase()),
-  );
   const selectedEquipmentCount = project.nodes.filter((n) =>
     selectionIds.has(n.id),
   ).length;
@@ -987,9 +960,7 @@ function WorkspaceInner() {
   ).length;
   const selectedCount = selectedEquipmentCount + selectedCableCount;
   const renderTreeNode = (node: Project["nodes"][number], child = false) => {
-    const children = query
-      ? []
-      : project.nodes.filter((n) => n.parentId === node.id);
+    const children = searchQuery ? [] : (treeChildren.get(node.id) ?? []);
     return (
       <div key={node.id}>
         <div
@@ -1018,9 +989,7 @@ function WorkspaceInner() {
           )}
         </div>
         {!collapsed.includes(node.id) &&
-          children
-            .filter((n) => !query || filteredNodes.includes(n))
-            .map((n) => renderTreeNode(n, true))}
+          children.map((n) => renderTreeNode(n, true))}
       </div>
     );
   };
@@ -1201,7 +1170,15 @@ function WorkspaceInner() {
             aria-label="Buscar elementos"
             placeholder="Buscar elemento…"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              if (e.target.value.trim())
+                setCollapsed((previous) =>
+                  previous.includes("cables")
+                    ? previous.filter((id) => id !== "cables")
+                    : previous,
+                );
+            }}
           />
           {query && (
             <button
@@ -1214,19 +1191,19 @@ function WorkspaceInner() {
           )}
         </div>
         <div className="element-tree">
-          {query
+          {searchQuery
             ? filteredNodes.map((n) => renderTreeNode(n))
             : project.nodes
                 .filter((n) => !n.parentId)
                 .map((n) => renderTreeNode(n))}
-          {filteredNodes.length === 0 && (
+          {filteredNodes.length === 0 && filteredEdges.length === 0 && (
             <p className="tree-empty">
-              {query
+              {searchQuery
                 ? "Nenhum elemento encontrado."
                 : "Seu projeto começa aqui. Adicione um equipamento da biblioteca."}
             </p>
           )}
-          {project.edges.length > 0 && !query && (
+          {filteredEdges.length > 0 && (
             <>
               <button
                 className="cable-tree-heading"
@@ -1238,10 +1215,10 @@ function WorkspaceInner() {
                 />
                 <CableIcon size={14} />
                 <span>Cabos e conexões</span>
-                <span>{project.edges.length}</span>
+                <span>{filteredEdges.length}</span>
               </button>
               {!collapsed.includes("cables") &&
-                project.edges.map((e) => (
+                filteredEdges.map((e) => (
                   <button
                     className={`cable-tree-row ${selection.includes(e.id) ? "selected" : ""}`}
                     key={e.id}

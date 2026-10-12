@@ -100,6 +100,12 @@ O `DiagramCanvas` mantém posições transitórias e medições no estado do Rea
 
 Durante o arraste, a análise elétrica e o salvamento local não são executados novamente. A análise usa índices de nós, conexões e alimentações e acumula as potências do circuito radial em ordem topológica, sem recursão profunda. O inspector recebe a mesma análise calculada pelo workspace.
 
+Ao finalizar movimentos ou alterar a câmera, o cache reutiliza resultados quando os dados elétricos permanecem iguais. Editar parâmetros, conexões, hierarquia ou nomes de elementos atualiza os cálculos e avisos. Edições sem alteração preservam o projeto e o histórico; editar um equipamento mantém a referência da lista de cabos, e vice-versa.
+
+Projetos com mais de 200 equipamentos usam a [renderização apenas de elementos visíveis do React Flow](https://reactflow.dev/api-reference/react-flow#viewport-props). Dimensões fixas e posições das portas permitem calcular e enquadrar conexões mesmo quando os símbolos ainda estão fora da tela. Exportações continuam incluindo o projeto inteiro. Equipamentos agrupados são ordenados com o painel antes dos filhos, tanto após arraste quanto ao mudar Localização.
+
+A validação de JSON usa índices e percorre cada equipamento e cabo uma vez para verificar a topologia, independentemente da ordem do arquivo. A busca aceita espaços nas extremidades e encontra equipamentos e cabos por nome; cabos também podem ser encontrados pela seção. Clicar num cabo na árvore ou num aviso enquadra suas extremidades. Pedidos de enquadramento feitos durante a inicialização prevalecem sobre a câmera salva.
+
 O cursor acompanha o modo: seta na área de seleção, mão na navegação e cruz na conexão. Equipamentos e portas indicam suas interações próprias.
 
 Na recuperação local, projetos válidos são mantidos mesmo se outro projeto estiver corrompido. O conteúdo anterior é copiado para a chave de recuperação; se essa cópia falhar, o editor bloqueia a sobrescrita automática dos dados originais e permite exportar o trabalho em JSON.
@@ -107,3 +113,5 @@ Na recuperação local, projetos válidos são mantidos mesmo se outro projeto e
 Os testes incluem React StrictMode, centenas de alterações de posição e medição, limites de painéis, movimentação em grupo, referências estáveis, recuperação com armazenamento bloqueado e análise de um circuito com 1.900 equipamentos.
 
 A validação de refinamento está registrada em [output/validacao-refinamento.md](output/validacao-refinamento.md). Há testes de importação com BOM, migração da classe de tensão, segurança de textos na exportação, limites de rasterização, 200 operações sucessivas de edição e exportação SVG de 1.900 equipamentos.
+
+A revisão de bugs e desempenho está em [output/validacao-bugs-otimizacao.md](output/validacao-bugs-otimizacao.md), incluindo regressões de alterações agrupadas, cabos fora da tela, cache em StrictMode, câmera durante a inicialização e importação/exportação de projetos grandes.
