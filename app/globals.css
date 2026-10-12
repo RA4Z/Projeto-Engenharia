@@ -2314,3 +2314,203 @@ a {
     max-width: 92vw;
   }
 }
+
+/* Actions remain local to the diagram; overlays have their own keyboard navigation. */
+.action-menu {
+  position: fixed;
+  z-index: 80;
+  width: 270px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 12px 40px #183a2426;
+}
+.action-menu > span {
+  display: block;
+  padding: 7px 9px;
+}
+.action-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px;
+  font-size: 12px;
+  border-radius: 6px;
+  color: #3c5849;
+}
+.action-menu button:hover:not(:disabled),
+.action-menu button:focus-visible {
+  background: #edf4e8;
+  outline: 2px solid #91b3a2;
+}
+.action-menu button:disabled {
+  opacity: 0.4;
+}
+.node-lock {
+  display: inline-flex;
+  margin-left: 5px;
+  vertical-align: middle;
+  color: #7d8d80;
+}
+.canvas-area.canvas-mode-select .react-flow__node:not(.draggable) {
+  cursor: default;
+}
+.canvas-area .react-flow__handle.port-valid {
+  background: #21856b;
+  box-shadow: 0 0 0 4px #21856b33;
+}
+.canvas-area .react-flow__handle.port-invalid {
+  background: #c74848;
+  box-shadow: 0 0 0 3px #c7484826;
+}
+.connection-hint {
+  position: absolute;
+  bottom: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  pointer-events: none;
+  background: #fff;
+  border: 1px solid #d3e2c9;
+  border-radius: 8px;
+  padding: 10px 14px;
+  max-width: calc(100% - 30px);
+  width: max-content;
+  font-size: 12px;
+  color: #425849;
+  box-shadow: 0 4px 18px #183a241a;
+}
+.position-lock-control {
+  margin: 12px 0;
+}
+.position-lock-control p {
+  font-size: 11px;
+  margin-top: 8px;
+}
+.quick-search-button kbd {
+  font: inherit;
+  font-size: 10px;
+  color: #8a998e;
+}
+.command-backdrop {
+  z-index: 100;
+  padding: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.command-palette {
+  width: min(580px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: 100%;
+  max-height: calc(100dvh - 32px);
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 90px #132f3533;
+  overflow: hidden;
+}
+.command-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px 10px;
+}
+.command-header h2 {
+  font-size: 16px;
+}
+.command-header button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+}
+.command-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px 12px;
+  border: 1px solid #acc1b2;
+  border-radius: 8px;
+  padding: 11px;
+  color: #53745e;
+}
+.command-input input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  font-size: 13px;
+}
+.command-results {
+  overflow-y: auto;
+  min-height: 80px;
+  max-height: min(440px, 55dvh);
+  padding: 0 8px 8px;
+}
+.command-results button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 7px;
+  color: #355444;
+}
+.command-results button strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.command-results button small {
+  font-size: 11px;
+  color: #7e8f83;
+}
+.command-results button.active,
+.command-results button:hover:not(:disabled) {
+  background: #eaf3e6;
+}
+.command-results button:disabled {
+  opacity: 0.4;
+}
+.command-results > p {
+  padding: 20px 12px;
+  font-size: 13px;
+  color: #7e8f83;
+}
+.command-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  color: #829187;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+@media (max-width: 1000px) {
+  .quick-search-button span,
+  .quick-search-button kbd {
+    display: none;
+  }
+}
+@media (max-width: 570px) {
+  .selection-actions > span {
+    max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .selection-actions {
+    gap: 1px;
+    padding: 5px;
+  }
+  .selection-actions button {
+    width: 27px;
+  }
+  .command-footer {
+    flex-direction: column;
+  }
+}

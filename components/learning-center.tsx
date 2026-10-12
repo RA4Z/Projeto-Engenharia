@@ -19,6 +19,8 @@ const shortcuts = [
   ["Esc", "Limpar seleção"],
   ["Delete", "Excluir"],
   ["Ctrl + S", "Exportar JSON"],
+  ["Ctrl + K", "Buscar ações, equipamentos e cabos"],
+  ["Botão direito", "Ações do elemento ou da seleção"],
   ["Shift + arraste", "Selecionar área"],
 ];
 

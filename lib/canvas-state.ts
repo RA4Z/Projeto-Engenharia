@@ -8,12 +8,17 @@ import {
 } from "@xyflow/react";
 import type { Equipment, Project } from "./project";
 import type { analyze, ElectricalResult } from "./calculations";
-import { equipmentSize, parentsFirst } from "./geometry";
+import { equipmentSize, parentsFirst, positionLockedIds } from "./geometry";
 import { canvasGeometry } from "./canvas-geometry";
 
 export type Analysis = ReturnType<typeof analyze>;
 export type EquipmentFlowNode = Node<
-  { equipment: Equipment; result?: ElectricalResult; warning: boolean },
+  {
+    equipment: Equipment;
+    result?: ElectricalResult;
+    warning: boolean;
+    positionLocked?: boolean;
+  },
   "equipment"
 >;
 
@@ -54,6 +59,7 @@ export function changeCanvasNodes(
     if (!node) return change.type === "add";
     if (change.type === "select")
       return Boolean(node.selected) !== change.selected;
+    if (change.type === "position") if (node.draggable === false) return false;
     if (change.type === "position")
       return (
         (change.position &&
@@ -82,7 +88,15 @@ export function changeCanvasNodes(
   // Changes for the same node must retain their order. A later change can undo
   // an earlier one even when its value equals the state before the batch.
   return useful.length
-    ? applyNodeChanges(hasRepeatedIds(changes) ? changes : useful, previous)
+    ? applyNodeChanges(
+        hasRepeatedIds(changes)
+          ? changes.filter(
+              (c) =>
+                c.type !== "position" || nodes.get(c.id)?.draggable !== false,
+            )
+          : useful,
+        previous,
+      )
     : previous;
 }
 
@@ -108,6 +122,7 @@ export function syncCanvasNodes(
   selection: string[],
 ) {
   const byId = new Map(previous.map((node) => [node.id, node]));
+  const locked = positionLockedIds(project);
   const selected = new Set(selection),
     warnings = new Set(
       analysis.issues
@@ -128,6 +143,7 @@ export function syncCanvasNodes(
       old.position.x === equipment.position.x &&
       old.position.y === equipment.position.y &&
       old.parentId === equipment.parentId &&
+      old.draggable === (locked.has(equipment.id) ? false : undefined) &&
       !old.dragging
     )
       return old;
@@ -151,6 +167,7 @@ export function syncCanvasNodes(
       parentId: equipment.parentId,
       extent,
       expandParent: false,
+      draggable: locked.has(equipment.id) ? false : undefined,
       selected: isSelected,
       dragging: false,
       style,
@@ -161,7 +178,12 @@ export function syncCanvasNodes(
         old.measured?.height !== undefined
           ? old.measured
           : { width, height },
-      data: { equipment, result, warning },
+      data: {
+        equipment,
+        result,
+        warning,
+        positionLocked: locked.has(equipment.id),
+      },
     };
   });
   return next.length === previous.length &&

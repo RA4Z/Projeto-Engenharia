@@ -30,6 +30,11 @@ O build gera `out/`, que pode ser hospedado em qualquer servidor de arquivos est
 - Inspector de equipamentos e cabos, resultados em tempo real e observações de capacidade, tensão e conectividade.
 - Duplicação de seleções completas, incluindo painéis e conexões internas. Copiar e colar conjuntos entre projetos pela área de transferência interna do editor, durante a sessão. Cópias recebem IDs novos e rótulos sem colisões; colar posiciona o conjunto no centro da área visível.
 - Barra de ações da seleção para enquadrar, copiar, duplicar, excluir e limpar. Resumo próprio no inspector para seleções múltiplas. Ajuste fino com as setas e desfazer/refazer até 60 alterações do projeto atual; segurar uma seta produz uma única entrada no histórico.
+- Alinhamento por bordas ou centros e distribuição com espaços iguais, pelo botão Organizar seleção, menu de contexto ou busca rápida. Alinhar exige dois equipamentos móveis; distribuir exige três. Painéis e filhos selecionados não se movem duas vezes. A operação preserva pais e rejeita limites incompatíveis sem alterar parte da seleção.
+- Menu com botão direito em equipamentos, cabos e fundo do canvas, com navegação por setas e Esc. O botão do meio continua navegando. Bloqueio de posição no menu, barra e inspector, salvo no JSON como `locked` opcional. Nós bloqueados continuam editáveis, copiáveis e excluíveis; não se movem por arraste, setas, alinhamento ou mudança de painel. Um painel bloqueado fixa seus filhos; um filho bloqueado impede mover seu painel.
+- Edição em lote dos campos com a mesma definição entre todos os itens selecionados. Valores distintos aparecem como "Valores diferentes"; apenas o campo editado é aplicado, com validação e uma entrada no histórico. Ctrl/Cmd+clique também permite selecionar vários itens na árvore.
+- Prévia de conexão com portas permitidas em verde, rejeitadas em vermelho, motivo antes de soltar e Esc para cancelar. A prévia e a criação usam o mesmo validador de topologia com índices reutilizáveis.
+- Busca rápida por Ctrl/Cmd+K ou botão Buscar: encontra equipamentos e cabos, adiciona símbolos e executa ações. Aceita buscas sem acentos e vários termos; correspondências exatas de nome têm prioridade. Setas navegam, Enter executa e Esc fecha, restaurando o foco. O editor fica inerte enquanto a janela está aberta.
 - Salvamento automático no `localStorage` do navegador. Exportação e importação JSON com validação de esquema e topologia. Importar o mesmo identificador cria uma cópia.
 - Classe de tensão dos cabos (U0/U) no inspector e no JSON. Projetos antigos continuam válidos e recebem "Não informada"; o editor não assume uma isolação para os cabos existentes.
 - Menu Exportar com projeto JSON, imagem PNG e diagrama PDF A3. A imagem é gerada a partir de todo o grafo, independentemente do zoom, da seleção e da posição da câmera, com fundo branco e sem controles do editor.
@@ -73,22 +78,25 @@ O salvamento depende da origem e do armazenamento disponível no navegador. Expo
 
 ## Atalhos
 
-| Atalho                  | Ação                                            |
-| ----------------------- | ----------------------------------------------- |
-| V / H / C               | Selecionar / navegar / conectar                 |
-| F                       | Enquadrar diagrama                              |
-| Shift + F               | Enquadrar seleção (inclui pontas dos cabos)     |
-| Ctrl ou Cmd + Z         | Desfazer                                        |
-| Ctrl ou Cmd + Shift + Z | Refazer                                         |
-| Ctrl ou Cmd + D         | Duplicar                                        |
-| Ctrl ou Cmd + C / V     | Copiar / colar equipamentos e conexões internas |
-| Ctrl ou Cmd + A         | Selecionar todos os equipamentos e cabos        |
-| Setas / Shift + setas   | Mover seleção 1 / 10 px                         |
-| Esc                     | Limpar seleção e voltar ao modo de seleção      |
-| Delete / Backspace      | Excluir seleção                                 |
-| Ctrl ou Cmd + S         | Exportar JSON                                   |
-| Shift + arraste         | Selecionar área                                 |
-| ?                       | Abrir guia                                      |
+| Atalho                         | Ação                                            |
+| ------------------------------ | ----------------------------------------------- |
+| V / H / C                      | Selecionar / navegar / conectar                 |
+| F                              | Enquadrar diagrama                              |
+| Shift + F                      | Enquadrar seleção (inclui pontas dos cabos)     |
+| Ctrl ou Cmd + Z                | Desfazer                                        |
+| Ctrl ou Cmd + Shift + Z        | Refazer                                         |
+| Ctrl ou Cmd + D                | Duplicar                                        |
+| Ctrl ou Cmd + C / V            | Copiar / colar equipamentos e conexões internas |
+| Ctrl ou Cmd + A                | Selecionar todos os equipamentos e cabos        |
+| Setas / Shift + setas          | Mover seleção 1 / 10 px                         |
+| Esc                            | Limpar seleção e voltar ao modo de seleção      |
+| Delete / Backspace             | Excluir seleção                                 |
+| Ctrl ou Cmd + S                | Exportar JSON                                   |
+| Ctrl ou Cmd + K                | Buscar ações, equipamentos e cabos              |
+| Ctrl ou Cmd + clique na árvore | Alternar item na seleção múltipla               |
+| Botão direito                  | Abrir ações do elemento, seleção ou canvas      |
+| Shift + arraste                | Selecionar área                                 |
+| ?                              | Abrir guia                                      |
 
 ## Organização
 

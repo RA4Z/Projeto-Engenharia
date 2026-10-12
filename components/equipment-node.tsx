@@ -1,5 +1,7 @@
 "use client";
-import { memo } from "react";
+import { memo, useContext } from "react";
+import { LockKeyhole } from "lucide-react";
+import { ConnectionPreviewContext } from "./connection-preview";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { catalog } from "@/lib/catalog";
 import type { EquipmentFlowNode } from "@/lib/canvas-state";
@@ -8,6 +10,23 @@ import Symbol from "./symbol";
 
 function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
   const { equipment: n, result, warning } = data;
+  const preview = useContext(ConnectionPreviewContext);
+  const candidate = preview?.destinations.has(n.id);
+  const reason = preview?.destinations.get(n.id);
+  const portClass = candidate
+    ? reason
+      ? "port-invalid"
+      : "port-valid"
+    : undefined;
+  const lock = data.positionLocked ? (
+    <span
+      className="node-lock"
+      title="Posição bloqueada"
+      aria-label="Posição bloqueada"
+    >
+      <LockKeyhole size={12} />
+    </span>
+  ) : null;
   const definition = catalog[n.type];
   if (n.type === "PANEL")
     return (
@@ -16,6 +35,7 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
           <span className="panel-node-title">
             <Symbol type="PANEL" size={20} />
             {n.label}
+            {lock}
           </span>
           <span>
             {number(Number(n.properties.voltage_v), 0)} V ·{" "}
@@ -45,6 +65,14 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
           type="target"
           position={Position.Top}
           id="in"
+          className={
+            preview?.destinationType === "target" ? portClass : undefined
+          }
+          title={
+            candidate && preview?.destinationType === "target"
+              ? (reason ?? "Conexão permitida")
+              : undefined
+          }
           aria-label={`Entrada de ${n.label}`}
         />
       )}
@@ -67,6 +95,7 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
       </div>
       <div className="node-label">
         {n.label}
+        {lock}
         {warning && (
           <span
             className="node-warning"
@@ -90,6 +119,14 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
               type="source"
               position={Position.Bottom}
               id={`out-${i + 1}`}
+              className={
+                preview?.destinationType === "source" ? portClass : undefined
+              }
+              title={
+                candidate && preview?.destinationType === "source"
+                  ? (reason ?? "Conexão permitida")
+                  : undefined
+              }
               style={{ left: `${left}%` }}
               aria-label={`Saída ${i + 1} de ${n.label}`}
             />
@@ -99,6 +136,14 @@ function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
             type="source"
             position={Position.Bottom}
             id="out"
+            className={
+              preview?.destinationType === "source" ? portClass : undefined
+            }
+            title={
+              candidate && preview?.destinationType === "source"
+                ? (reason ?? "Conexão permitida")
+                : undefined
+            }
             aria-label={`Saída de ${n.label}`}
           />
         ))}

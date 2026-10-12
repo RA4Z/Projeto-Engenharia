@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { batchFields } from "@/lib/qol-editing";
+import { positionLockedIds } from "@/lib/geometry";
 import {
   ChevronDown,
   Copy,
@@ -28,13 +30,13 @@ function PropertyField({
   onChange,
 }: {
   field: Field;
-  value: number | string;
+  value: number | string | undefined;
   onChange: (value: number | string) => void;
 }) {
-  const [draft, setDraft] = useState(String(value));
+  const [draft, setDraft] = useState(value === undefined ? "" : String(value));
   const [invalid, setInvalid] = useState(false);
   useEffect(() => {
-    setDraft(String(value));
+    setDraft(value === undefined ? "" : String(value));
     setInvalid(false);
   }, [value]);
   return (
@@ -44,7 +46,7 @@ function PropertyField({
         <div className="select-wrap">
           <select
             aria-label={field.label}
-            value={String(value)}
+            value={value === undefined ? "" : String(value)}
             onChange={(e) =>
               onChange(
                 field.options!.find((o) => String(o.value) === e.target.value)!
@@ -52,6 +54,11 @@ function PropertyField({
               )
             }
           >
+            {value === undefined && (
+              <option value="" disabled>
+                Valores diferentes
+              </option>
+            )}
             {field.options.map((o) => (
               <option value={String(o.value)} key={String(o.value)}>
                 {o.label}
@@ -66,6 +73,7 @@ function PropertyField({
             aria-label={field.label}
             type="number"
             value={draft}
+            placeholder={value === undefined ? "Valores diferentes" : undefined}
             min={field.min}
             max={field.max}
             step={field.step ?? "any"}
@@ -74,6 +82,7 @@ function PropertyField({
               setInvalid(false);
             }}
             onBlur={() => {
+              if (value === undefined && draft.trim() === "") return;
               const v = Number(draft);
               if (
                 draft.trim() === "" ||
@@ -83,7 +92,7 @@ function PropertyField({
                 (field.key === "parallel_runs" && !Number.isInteger(v))
               ) {
                 setInvalid(true);
-                setDraft(String(value));
+                setDraft(value === undefined ? "" : String(value));
               } else onChange(v);
             }}
             onKeyDown={(e) => {
@@ -152,6 +161,10 @@ export default function Inspector({
   onClear,
   onSelect,
   onClose,
+  selectedIds,
+  onBatchUpdate,
+  onLock,
+  inert,
 }: {
   project: Project;
   analysis: Analysis;
@@ -169,6 +182,10 @@ export default function Inspector({
   onClear: () => void;
   onSelect: (id: string) => void;
   onClose: () => void;
+  selectedIds: string[];
+  onBatchUpdate: (patch: Properties) => void;
+  onLock: (locked: boolean) => void;
+  inert?: boolean;
 }) {
   const node = project.nodes.find((n) => n.id === selection),
     edge = project.edges.find((e) => e.id === selection);
@@ -176,13 +193,23 @@ export default function Inspector({
   const [label, setLabel] = useState(item?.label ?? "");
   useEffect(() => setLabel(item?.label ?? ""), [item?.id, item?.label]);
   const fields = node ? catalog[node.type].fields : cableFields;
+  const commonFields = useMemo(
+    () => batchFields(project, selectedIds),
+    [project.nodes, project.edges, selectedIds],
+  );
+  const locked = useMemo(() => positionLockedIds(project), [project.nodes]);
   const result = node
     ? analysis.nodeResults.get(node.id)
     : edge
       ? analysis.cables.get(edge.id)
       : undefined;
   return (
-    <aside className="inspector" data-tour="inspector">
+    <aside
+      className="inspector"
+      data-tour="inspector"
+      inert={inert}
+      aria-hidden={inert || undefined}
+    >
       <div className="inspector-tabs">
         <button
           className={tab === "properties" ? "active" : ""}
@@ -338,8 +365,8 @@ export default function Inspector({
             <div className="section-eyebrow">SELEÇÃO MÚLTIPLA</div>
             <h2 className="inspector-heading">Edite o conjunto.</h2>
             <p className="muted-text">
-              Mova os itens juntos, copie ou duplique a seleção. Selecione um
-              único item para editar seus parâmetros.
+              Altere um campo para aplicá-lo a todos os itens selecionados. Os
+              demais parâmetros são preservados.
             </p>
             <div className="project-overview">
               <div className="section-eyebrow">NESTA SELEÇÃO</div>
@@ -352,6 +379,38 @@ export default function Inspector({
                 <b>{selectionSummary.cables}</b>
               </div>
             </div>
+            <div className="section-title">Propriedades em lote</div>
+            {commonFields.length ? (
+              commonFields.map(({ field, value }) => (
+                <PropertyField
+                  key={`${selectedIds.join("|")}:${field.key}`}
+                  field={field}
+                  value={value}
+                  onChange={(v) => onBatchUpdate({ [field.key]: v })}
+                />
+              ))
+            ) : (
+              <p className="muted-text">
+                Não há campos compatíveis entre todos os itens. Selecione apenas
+                cabos ou equipamentos com parâmetros em comum.
+              </p>
+            )}
+            {selectionSummary.equipment > 0 && (
+              <div className="item-actions">
+                <button
+                  className="secondary-button"
+                  onClick={() => onLock(true)}
+                >
+                  Bloquear posição
+                </button>
+                <button
+                  className="secondary-button"
+                  onClick={() => onLock(false)}
+                >
+                  Desbloquear
+                </button>
+              </div>
+            )}
             <div className="inspector-tip">
               <Info size={16} />
               <p>
@@ -426,12 +485,29 @@ export default function Inspector({
                 }}
               />
             </label>
+            {node && (
+              <div className="position-lock-control">
+                <button
+                  className="secondary-button full-width"
+                  onClick={() => onLock(!node.locked)}
+                >
+                  {node.locked ? "Desbloquear posição" : "Bloquear posição"}
+                </button>
+                {locked.has(node.id) && (
+                  <p className="muted-text">
+                    Posição fixa. Painéis com filhos bloqueados também ficam
+                    fixos; um painel bloqueado fixa seus filhos.
+                  </p>
+                )}
+              </div>
+            )}
             {node && node.type !== "PANEL" && (
               <label className="property-field">
                 <span>Localização</span>
                 <div className="select-wrap">
                   <select
                     aria-label="Localização"
+                    disabled={locked.has(node.id)}
                     value={node.parentId ?? ""}
                     onChange={(e) => onParent(node.id, e.target.value)}
                   >

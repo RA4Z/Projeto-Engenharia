@@ -15,6 +15,7 @@ export type Equipment = {
   label: string;
   position: { x: number; y: number };
   parentId?: string;
+  locked?: boolean;
   properties: Properties;
 };
 export type Cable = {
@@ -67,6 +68,7 @@ const projectSchema = z.object({
           y: z.number().finite().min(-100000).max(100000),
         }),
         parentId: idSchema.optional(),
+        locked: z.boolean().optional(),
         properties: propertiesSchema,
       }),
     )
@@ -222,29 +224,43 @@ export function connectionError(
   from: string,
   to: string,
 ): string | null {
-  const source = project.nodes.find((n) => n.id === from),
-    target = project.nodes.find((n) => n.id === to);
-  const error = endpointError(source, target);
-  if (error) return error;
-  if (project.edges.some((e) => e.to === to))
-    return "O equipamento já tem uma alimentação. Este modelo utiliza circuitos radiais.";
+  return createConnectionValidator(project)(from, to);
+}
+
+/** Reuse graph indexes during connection previews; pointer movement does not rebuild them. */
+export function createConnectionValidator(
+  project: Pick<Project, "nodes" | "edges">,
+) {
+  const nodes = new Map(project.nodes.map((n) => [n.id, n]));
+  const incoming = new Set(project.edges.map((e) => e.to));
   const outgoing = new Map<string, string[]>();
   for (const edge of project.edges) {
     const children = outgoing.get(edge.from) ?? [];
     children.push(edge.to);
     outgoing.set(edge.from, children);
   }
-  const pending = [to],
-    visited = new Set<string>();
-  while (pending.length) {
-    const id = pending.pop()!;
-    if (id === from)
-      return "Essa conexão criaria um circuito fechado. Use uma topologia radial.";
-    if (visited.has(id)) continue;
-    visited.add(id);
-    pending.push(...(outgoing.get(id) ?? []));
-  }
-  return null;
+  const reachable = new Map<string, Set<string>>();
+  return (from: string, to: string): string | null => {
+    const error = endpointError(nodes.get(from), nodes.get(to));
+    if (error) return error;
+    if (incoming.has(to))
+      return "O equipamento já tem uma alimentação. Este modelo utiliza circuitos radiais.";
+    let visited = reachable.get(to);
+    if (!visited) {
+      visited = new Set<string>();
+      const pending = [to];
+      while (pending.length) {
+        const id = pending.pop()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        pending.push(...(outgoing.get(id) ?? []));
+      }
+      reachable.set(to, visited);
+    }
+    return visited.has(from)
+      ? "Essa conexão criaria um circuito fechado. Use uma topologia radial."
+      : null;
+  };
 }
 
 function endpointError(source?: Equipment, target?: Equipment): string | null {

@@ -22,6 +22,21 @@ export function equipmentSize(type: Equipment["type"]) {
   };
 }
 
+/** A locked panel fixes its children; a locked child also prevents its panel moving. */
+export function positionLockedIds(
+  project: Pick<Project, "nodes">,
+): Set<string> {
+  const locked = new Set(
+    project.nodes.filter((n) => n.locked).map((n) => n.id),
+  );
+  const explicit = new Set(locked);
+  for (const n of project.nodes) {
+    if (n.parentId && explicit.has(n.parentId)) locked.add(n.id);
+    if (n.parentId && n.locked) locked.add(n.parentId);
+  }
+  return locked;
+}
+
 export function clampEquipmentPosition(
   node: Pick<Equipment, "type" | "parentId">,
   position: Equipment["position"],
@@ -45,7 +60,12 @@ export function finishEquipmentDrag(
   project: Project,
   moves: { id: string; position: Equipment["position"] }[],
 ): Project {
-  const byId = new Map(moves.map((move) => [move.id, move.position]));
+  const locked = positionLockedIds(project);
+  const byId = new Map(
+    moves
+      .filter((move) => !locked.has(move.id))
+      .map((move) => [move.id, move.position]),
+  );
   const independent = project.nodes.filter(
     (node) =>
       byId.has(node.id) &&
@@ -149,7 +169,12 @@ export function reparentEquipment(
   parentId: string,
 ): Project {
   const node = project.nodes.find((n) => n.id === id);
-  if (!node || node.type === "PANEL" || (node.parentId ?? "") === parentId)
+  if (
+    !node ||
+    positionLockedIds(project).has(id) ||
+    node.type === "PANEL" ||
+    (node.parentId ?? "") === parentId
+  )
     return project;
   const parent = project.nodes.find((n) => n.id === node.parentId);
   const nextParent = parentId

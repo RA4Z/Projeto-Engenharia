@@ -14,7 +14,8 @@ export type EditorAction =
   | "fit"
   | "fitSelection"
   | "help"
-  | "nudge";
+  | "nudge"
+  | "commands";
 
 const modifiedActions: Partial<Record<string, EditorAction>> = {
   y: "redo",
@@ -23,6 +24,7 @@ const modifiedActions: Partial<Record<string, EditorAction>> = {
   c: "copy",
   v: "paste",
   a: "selectAll",
+  k: "commands",
 };
 const plainActions: Partial<Record<string, EditorAction>> = {
   delete: "delete",

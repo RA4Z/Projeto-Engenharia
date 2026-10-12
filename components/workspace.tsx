@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type DragEvent,
+  type MouseEvent,
 } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -50,6 +51,8 @@ import {
   Minus,
   PanelLeftClose,
   PanelRightClose,
+  LockKeyhole,
+  UnlockKeyhole,
 } from "lucide-react";
 import {
   cableDefaults,
@@ -97,6 +100,17 @@ import Inspector from "./inspector";
 import Symbol from "./symbol";
 import GuidedTour from "./guided-tour";
 import LearningCenter from "./learning-center";
+import ActionMenu from "./action-menu";
+import CommandPalette from "./command-palette";
+import type { Command } from "@/lib/command-search";
+import {
+  arrangementActions,
+  arrangeSelection,
+  movableSelection,
+  setPositionLock,
+  updateBatchProperties,
+  type Arrangement,
+} from "@/lib/qol-editing";
 import {
   rememberOnboarding,
   shouldOfferTour,
@@ -128,6 +142,13 @@ function WorkspaceInner() {
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [tab, setTab] = useState<"properties" | "analysis">("properties");
   const [modal, setModal] = useState<Modal>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteFocus = useRef<HTMLElement | null>(null);
+  const [actionMenu, setActionMenu] = useState<{
+    x: number;
+    y: number;
+    kind: "context" | "arrange";
+  } | null>(null);
   const [tourActive, setTourActive] = useState(false);
   const [welcome, setWelcome] = useState(false);
   const tourLayout = useRef<{
@@ -160,6 +181,32 @@ function WorkspaceInner() {
   const inputRef = useRef<HTMLInputElement>(null),
     canvasRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const closeMenu = useCallback(() => {
+    setActionMenu(null);
+    canvasRef.current?.focus({ preventScroll: true });
+  }, []);
+  const closePalette = useCallback(() => {
+    flushSync(() => setPaletteOpen(false));
+    const target = paletteFocus.current;
+    (target?.isConnected ? target : canvasRef.current)?.focus({
+      preventScroll: true,
+    });
+  }, []);
+  const openPalette = useCallback(() => {
+    if (modal || tourActive) return;
+    paletteFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    flushSync(() => paletteFocus.current?.blur());
+    setActionMenu(null);
+    setExportOpen(false);
+    setPaletteOpen(true);
+  }, [modal, tourActive]);
+  useEffect(() => {
+    setActionMenu(null);
+    setPaletteOpen(false);
+  }, [activeId, tourActive, modal]);
   const project = projects.find((p) => p.projectId === activeId);
   const focusNodes = useProjectViewport(project, flow, canvasRef);
   const {
@@ -593,6 +640,21 @@ function WorkspaceInner() {
       const target = event.target;
       if (modal || tourActive || !(target instanceof HTMLElement)) return;
       const action = editorAction(event);
+      if (action === "commands") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) paletteOpen ? closePalette() : openPalette();
+        return;
+      }
+      if (paletteOpen) return;
+      if (actionMenu) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          closeMenu();
+        }
+        return;
+      }
       if (
         event.repeat &&
         action &&
@@ -726,6 +788,11 @@ function WorkspaceInner() {
     removeSelection,
     flow,
     exportOpen,
+    paletteOpen,
+    openPalette,
+    closePalette,
+    actionMenu,
+    closeMenu,
   ]);
 
   const connect = useCallback(
@@ -851,6 +918,60 @@ function WorkspaceInner() {
     if (window.innerWidth < 800) setLeftOpen(false);
     if (project) focusNodes(selectionEquipmentIds(project, [id]));
   };
+  const lockSelection = (locked: boolean) => {
+    if (!project) return;
+    commit(setPositionLock(project, selection, locked));
+  };
+  const selectTreeItem = (event: MouseEvent<HTMLElement>, id: string) => {
+    if (!event.ctrlKey && !event.metaKey) {
+      focusItem(id);
+      return;
+    }
+    setSelection((previous) =>
+      previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id],
+    );
+    setTab("properties");
+    setRightOpen(true);
+  };
+  const arrange = (action: Arrangement) => {
+    if (!project) return;
+    try {
+      commit(arrangeSelection(project, selection, action));
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível organizar a seleção.",
+        true,
+      );
+    }
+  };
+  const batchUpdate = (patch: Properties) => {
+    if (!project) return;
+    try {
+      commit(updateBatchProperties(project, selection, patch));
+    } catch (error) {
+      notify(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível editar a seleção.",
+        true,
+      );
+    }
+  };
+  const showContextMenu = useCallback(
+    (x: number, y: number, id?: string) => {
+      if (modal || tourActive || paletteOpen) return;
+      setExportOpen(false);
+      if (id)
+        setSelection((previous) => (previous.includes(id) ? previous : [id]));
+      else setSelection([]);
+      setActionMenu({ x, y, kind: "context" });
+    },
+    [modal, tourActive, paletteOpen],
+  );
   const importFile = async (file: File) => {
     if (importBusy.current) {
       notify("Uma importação já está em andamento.", true);
@@ -959,6 +1080,152 @@ function WorkspaceInner() {
     selectionIds.has(e.id),
   ).length;
   const selectedCount = selectedEquipmentCount + selectedCableCount;
+  const movableCount = movableSelection(project, selection).length;
+  const ownLocked = project.nodes.some(
+    (n) => selectionIds.has(n.id) && n.locked,
+  );
+  const layoutActions = arrangementActions.map(([action, label]) => ({
+    label,
+    disabled:
+      movableCount < (action === "horizontal" || action === "vertical" ? 3 : 2),
+    run: () => arrange(action),
+  }));
+  const renameSelected = () => {
+    setTab("properties");
+    setRightOpen(true);
+    requestAnimationFrame(() => {
+      const field = document.querySelector<HTMLInputElement>(
+        'input[aria-label="Nome do elemento"]',
+      );
+      field?.focus();
+      field?.select();
+    });
+  };
+  const commandNodes = paletteOpen
+    ? new Map(project.nodes.map((n) => [n.id, n]))
+    : null;
+  const commandList: Command[] = paletteOpen
+    ? [
+        {
+          id: "fit",
+          label: "Enquadrar diagrama",
+          detail: "Ação · F",
+          run: () =>
+            void flow?.fitView({ padding: 0.2, maxZoom: 1, duration: 200 }),
+        },
+        {
+          id: "fit-selection",
+          label: "Enquadrar seleção",
+          detail: "Ação · Shift+F",
+          disabled: !selectedCount,
+          run: fitSelection,
+        },
+        {
+          id: "undo",
+          label: "Desfazer",
+          detail: "Ação · Ctrl+Z",
+          disabled: !history.past.length,
+          run: undo,
+        },
+        {
+          id: "redo",
+          label: "Refazer",
+          detail: "Ação · Ctrl+Shift+Z",
+          disabled: !history.future.length,
+          run: redo,
+        },
+        {
+          id: "export",
+          label: "Exportar projeto JSON",
+          detail: "Ação · Ctrl+S",
+          run: exportProject,
+        },
+        {
+          id: "import",
+          label: "Importar projeto JSON",
+          detail: "Ação",
+          run: () => inputRef.current?.click(),
+        },
+        {
+          id: "analysis",
+          label: "Abrir análise do projeto",
+          detail: "Ação",
+          run: () => {
+            setTab("analysis");
+            setRightOpen(true);
+          },
+        },
+        {
+          id: "help",
+          label: "Abrir tutorial e ajuda",
+          detail: "Ação · ?",
+          run: () => setModal({ type: "help" }),
+        },
+        {
+          id: "copy",
+          label: "Copiar seleção",
+          detail: "Ação · Ctrl+C",
+          disabled: !selectedEquipmentCount,
+          run: copySelection,
+        },
+        {
+          id: "paste",
+          label: "Colar equipamentos",
+          detail: "Ação · Ctrl+V",
+          disabled: !clipboard,
+          run: pasteSelection,
+        },
+        {
+          id: "duplicate",
+          label: "Duplicar seleção",
+          detail: "Ação · Ctrl+D",
+          disabled: !selectedEquipmentCount,
+          run: duplicate,
+        },
+        {
+          id: "lock",
+          label: "Bloquear posição",
+          detail: "Ação · seleção",
+          disabled: !selectedEquipmentCount,
+          run: () => lockSelection(true),
+        },
+        {
+          id: "unlock",
+          label: "Desbloquear posição",
+          detail: "Ação · seleção",
+          disabled: !selectedEquipmentCount,
+          run: () => lockSelection(false),
+        },
+        ...layoutActions.map((a, i) => ({
+          id: `layout-${i}`,
+          label: a.label,
+          detail: "Ação · seleção",
+          disabled: a.disabled,
+          run: a.run,
+        })),
+        ...equipmentTypes.map((type) => ({
+          id: `add-${type}`,
+          label: `Adicionar ${catalog[type].name}`,
+          detail: "Biblioteca de equipamentos",
+          keywords: catalog[type].category,
+          run: () => addEquipment(type),
+        })),
+        ...project.nodes.map((n) => ({
+          id: `node-${n.id}`,
+          label: n.label,
+          detail: `Equipamento · ${catalog[n.type].name}`,
+          keywords: n.parentId ? commandNodes?.get(n.parentId)?.label : "",
+          run: () => focusItem(n.id),
+        })),
+        ...project.edges.map((e) => ({
+          id: `edge-${e.id}`,
+          label: e.label || "Cabo",
+          detail: `Cabo · ${e.properties.section_mm2} mm²`,
+          keywords: `${commandNodes?.get(e.from)?.label} ${commandNodes?.get(e.to)?.label}`,
+          run: () => focusItem(e.id),
+        })),
+      ]
+    : [];
   const renderTreeNode = (node: Project["nodes"][number], child = false) => {
     const children = searchQuery ? [] : (treeChildren.get(node.id) ?? []);
     return (
@@ -966,7 +1233,11 @@ function WorkspaceInner() {
         <div
           className={`tree-row ${child ? "child" : ""} ${selection.includes(node.id) ? "selected" : ""}`}
         >
-          <button className="tree-element" onClick={() => focusItem(node.id)}>
+          <button
+            className="tree-element"
+            onClick={(event) => selectTreeItem(event, node.id)}
+            aria-pressed={selectionIds.has(node.id)}
+          >
             {node.type === "PANEL" ? (
               <LayoutPanelLeft size={15} />
             ) : (
@@ -1004,7 +1275,11 @@ function WorkspaceInner() {
         onExit={finishTour}
         onError={tourError}
       />
-      <header className="topbar">
+      <header
+        className="topbar"
+        inert={paletteOpen}
+        aria-hidden={paletteOpen || undefined}
+      >
         <div className="brand">
           <div className="brand-mark">
             <Zap size={21} fill="currentColor" />
@@ -1034,6 +1309,16 @@ function WorkspaceInner() {
               : "Falha ao salvar"}
         </div>
         <div className="topbar-actions">
+          <button
+            className="secondary-button quick-search-button"
+            aria-label="Busca rápida (Ctrl+K)"
+            title="Busca rápida (Ctrl+K)"
+            onClick={openPalette}
+          >
+            <Search size={15} />
+            <span>Buscar</span>
+            <kbd>Ctrl K</kbd>
+          </button>
           <button
             className="secondary-button import-button"
             data-tour="import"
@@ -1100,7 +1385,12 @@ function WorkspaceInner() {
           </button>
         </div>
       </header>
-      <aside className="left-sidebar" data-tour="projects">
+      <aside
+        className="left-sidebar"
+        data-tour="projects"
+        inert={paletteOpen}
+        aria-hidden={paletteOpen || undefined}
+      >
         <div className="sidebar-section-label">
           <span>SEU WORKSPACE</span>
           <button
@@ -1222,7 +1512,8 @@ function WorkspaceInner() {
                   <button
                     className={`cable-tree-row ${selection.includes(e.id) ? "selected" : ""}`}
                     key={e.id}
-                    onClick={() => focusItem(e.id)}
+                    onClick={(event) => selectTreeItem(event, e.id)}
+                    aria-pressed={selectionIds.has(e.id)}
                   >
                     <span>{e.label}</span>
                     <small>{e.properties.section_mm2} mm²</small>
@@ -1250,7 +1541,11 @@ function WorkspaceInner() {
           </button>
         </div>
       </aside>
-      <main className="main-workspace">
+      <main
+        className="main-workspace"
+        inert={paletteOpen}
+        aria-hidden={paletteOpen || undefined}
+      >
         <div className="canvas-titlebar">
           <div>
             <span className="workspace-eyebrow">ENGENHARIA ELÉTRICA</span>
@@ -1336,6 +1631,8 @@ function WorkspaceInner() {
         <div
           className={`canvas-area canvas-mode-${mode}`}
           ref={canvasRef}
+          tabIndex={-1}
+          aria-label="Área do diagrama"
           onDrop={onDrop}
           onDragOver={(e) => {
             e.preventDefault();
@@ -1357,6 +1654,7 @@ function WorkspaceInner() {
             onProperties={showProperties}
             onZoom={setZoom}
             onViewport={saveViewport}
+            onContextMenu={showContextMenu}
           />
 
           {welcome && !modal && !tourActive && (
@@ -1499,6 +1797,37 @@ function WorkspaceInner() {
                 <Trash2 size={16} />
               </button>
               <button
+                aria-label="Organizar seleção"
+                title="Alinhar e distribuir equipamentos"
+                disabled={movableCount < 2}
+                aria-haspopup="menu"
+                aria-expanded={actionMenu?.kind === "arrange"}
+                onClick={(e) => {
+                  const box = e.currentTarget.getBoundingClientRect();
+                  setActionMenu(
+                    actionMenu
+                      ? null
+                      : { x: box.left, y: box.bottom + 6, kind: "arrange" },
+                  );
+                }}
+              >
+                <Grid2X2 size={16} />
+              </button>
+              <button
+                aria-label={
+                  ownLocked ? "Desbloquear posição" : "Bloquear posição"
+                }
+                title={ownLocked ? "Desbloquear posição" : "Bloquear posição"}
+                disabled={!selectedEquipmentCount}
+                onClick={() => lockSelection(!ownLocked)}
+              >
+                {ownLocked ? (
+                  <UnlockKeyhole size={16} />
+                ) : (
+                  <LockKeyhole size={16} />
+                )}
+              </button>
+              <button
                 title="Limpar seleção (Esc)"
                 aria-label="Limpar seleção"
                 onClick={() => setSelection([])}
@@ -1632,6 +1961,7 @@ function WorkspaceInner() {
         </footer>
       </main>
       <Inspector
+        inert={paletteOpen}
         project={project}
         analysis={analysis}
         onClose={() => setRightOpen(false)}
@@ -1649,7 +1979,83 @@ function WorkspaceInner() {
         onParent={changeParent}
         onClear={() => setSelection([])}
         onSelect={focusItem}
+        selectedIds={selection}
+        onBatchUpdate={batchUpdate}
+        onLock={lockSelection}
       />
+      {actionMenu && (
+        <ActionMenu
+          x={actionMenu.x}
+          y={actionMenu.y}
+          onClose={closeMenu}
+          label={
+            actionMenu.kind === "arrange"
+              ? "Organizar seleção"
+              : selectedCount
+                ? "Ações da seleção"
+                : "Área de trabalho"
+          }
+          actions={
+            actionMenu.kind === "arrange"
+              ? layoutActions
+              : selectedCount
+                ? [
+                    {
+                      label: "Editar propriedades",
+                      run: () => {
+                        setTab("properties");
+                        setRightOpen(true);
+                      },
+                    },
+                    {
+                      label: "Renomear",
+                      disabled: selectedCount !== 1,
+                      run: renameSelected,
+                    },
+                    { label: "Enquadrar seleção", run: fitSelection },
+                    {
+                      label: "Copiar",
+                      disabled: !selectedEquipmentCount,
+                      run: copySelection,
+                    },
+                    {
+                      label: "Duplicar",
+                      disabled: !selectedEquipmentCount,
+                      run: duplicate,
+                    },
+                    {
+                      label: ownLocked
+                        ? "Desbloquear posição"
+                        : "Bloquear posição",
+                      disabled: !selectedEquipmentCount,
+                      run: () => lockSelection(!ownLocked),
+                    },
+                    ...layoutActions,
+                    { label: "Excluir seleção", run: removeSelection },
+                  ]
+                : [
+                    { label: "Adicionar equipamento…", run: openPalette },
+                    {
+                      label: "Colar equipamentos",
+                      disabled: !clipboard,
+                      run: pasteSelection,
+                    },
+                    {
+                      label: "Enquadrar diagrama",
+                      run: () =>
+                        void flow?.fitView({
+                          padding: 0.2,
+                          maxZoom: 1,
+                          duration: 200,
+                        }),
+                    },
+                  ]
+          }
+        />
+      )}
+      {paletteOpen && (
+        <CommandPalette commands={commandList} onClose={closePalette} />
+      )}
       <input
         type="file"
         accept=".json,application/json"
