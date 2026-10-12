@@ -691,13 +691,29 @@ a {
   background: var(--canvas);
 }
 .react-flow__pane {
-  cursor: crosshair !important;
+  cursor: default;
 }
-.react-flow__node {
-  cursor: grab !important;
+.canvas-area.canvas-mode-select .react-flow__pane {
+  cursor: default;
 }
-.react-flow__node.dragging {
-  cursor: grabbing !important;
+.canvas-area.canvas-mode-select .react-flow__node {
+  cursor: grab;
+}
+.canvas-area.canvas-mode-select .react-flow__node.dragging,
+.canvas-area.canvas-mode-pan .react-flow__pane.dragging,
+.canvas-area.canvas-mode-pan .react-flow__pane:active {
+  cursor: grabbing;
+}
+.canvas-area.canvas-mode-pan .react-flow__pane,
+.canvas-area.canvas-mode-pan .react-flow__node,
+.canvas-area.canvas-mode-pan .react-flow__handle {
+  cursor: grab;
+}
+.canvas-area.canvas-mode-connect .react-flow__pane,
+.canvas-area.canvas-mode-connect .react-flow__node,
+.canvas-area.canvas-mode-connect .react-flow__handle,
+.canvas-area.canvas-mode-select .react-flow__handle {
+  cursor: crosshair;
 }
 .react-flow__node-equipment {
   border: 0 !important;

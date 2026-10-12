@@ -188,3 +188,52 @@ test("cabo utiliza a tensão real de origem e sinaliza primário incompatível",
     ),
   );
 });
+test("análise de um circuito radial com 1.900 equipamentos evita recursão profunda", () => {
+  const project = createProject("Circuito grande");
+  const source = createEquipment("SOURCE", { x: 0, y: 0 });
+  source.properties.voltage_v = 380;
+  project.nodes.push(source);
+  for (let i = 1; i < 1900; i++) {
+    const node = createEquipment(i === 1899 ? "LOAD" : "BUSBAR", {
+      x: i,
+      y: i,
+    });
+    project.edges.push({
+      id: `edge-${i}`,
+      from: project.nodes[i - 1].id,
+      to: node.id,
+      label: `C-${i}`,
+      properties: { ...cableDefaults },
+    });
+    project.nodes.push(node);
+  }
+  const result = analyze(project);
+  assert.equal(result.nodeResults.size, 1900);
+  near(result.nodeResults.get(source.id)!.active, 15);
+  assert.equal(result.cables.size, 1899);
+});
+test("painel não conta carga duas vezes quando um circuito sai e retorna a ele", () => {
+  const project = createProject("Painel");
+  const panel = createEquipment("PANEL", { x: 0, y: 0 });
+  const a = createEquipment("BUSBAR", { x: 40, y: 100 }, "A", panel.id),
+    outside = createEquipment("BUSBAR", { x: 800, y: 0 }),
+    load = createEquipment("LOAD", { x: 100, y: 300 }, "Carga", panel.id);
+  project.nodes = [panel, a, outside, load];
+  project.edges = [
+    {
+      id: "e1",
+      from: a.id,
+      to: outside.id,
+      label: "1",
+      properties: { ...cableDefaults },
+    },
+    {
+      id: "e2",
+      from: outside.id,
+      to: load.id,
+      label: "2",
+      properties: { ...cableDefaults },
+    },
+  ];
+  near(analyze(project).nodeResults.get(panel.id)!.active, 15);
+});

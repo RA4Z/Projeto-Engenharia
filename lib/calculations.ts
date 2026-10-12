@@ -20,11 +20,18 @@ export type Issue = {
   message: string;
   severity: "warning" | "info";
 };
-export const number = (value: number, digits = 1) =>
-  new Intl.NumberFormat("pt-BR", {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: digits,
-  }).format(value);
+const formatters = new Map<number, Intl.NumberFormat>();
+export const number = (value: number, digits = 1) => {
+  let formatter = formatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("pt-BR", {
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    });
+    formatters.set(digits, formatter);
+  }
+  return formatter.format(value);
+};
 export function sumPower(powers: Pick<Power, "active" | "reactive">[]): Power {
   const active = powers.reduce((s, p) => s + p.active, 0),
     reactive = powers.reduce((s, p) => s + p.reactive, 0);
@@ -46,71 +53,126 @@ export function loadPower(node: Equipment): Power {
   const reactive = active * Math.tan(Math.acos(factor));
   return sumPower([{ active, reactive }]);
 }
-export function downstreamPower(project: Project, id: string): Power {
-  const visited = new Set<string>(),
-    pending = [id],
-    loads: Power[] = [];
-  const map = new Map(project.nodes.map((n) => [n.id, n]));
-  const adjacency = new Map<string, string[]>();
-  project.edges.forEach((e) =>
-    adjacency.set(e.from, [...(adjacency.get(e.from) ?? []), e.to]),
-  );
-  while (pending.length) {
-    const next = pending.pop()!;
-    if (visited.has(next)) continue;
-    visited.add(next);
-    const node = map.get(next);
-    if (node && ["LOAD", "MOTOR"].includes(node.type))
-      loads.push(loadPower(node));
-    pending.push(...(adjacency.get(next) ?? []));
+function graphContext(project: Project) {
+  const nodes = new Map(project.nodes.map((node) => [node.id, node]));
+  const incoming = new Map(project.edges.map((edge) => [edge.to, edge]));
+  const children = new Map<string, string[]>();
+  const members = new Map<string, Equipment[]>();
+  for (const node of project.nodes)
+    if (node.parentId) {
+      const list = members.get(node.parentId) ?? [];
+      list.push(node);
+      members.set(node.parentId, list);
+    }
+  for (const edge of project.edges) {
+    const list = children.get(edge.from) ?? [];
+    list.push(edge.to);
+    children.set(edge.from, list);
   }
-  return sumPower(loads);
+  const powers = new Map(
+    project.nodes.map((node) => [node.id, loadPower(node)]),
+  );
+  const remaining = new Map(
+    project.nodes.map((node) => [
+      node.id,
+      (children.get(node.id) ?? []).length,
+    ]),
+  );
+  const queue = project.nodes
+    .filter((node) => remaining.get(node.id) === 0)
+    .map((node) => node.id);
+  for (let i = 0; i < queue.length; i++) {
+    const id = queue[i],
+      parent = incoming.get(id)?.from;
+    if (!parent || !powers.has(parent)) continue;
+    powers.set(parent, sumPower([powers.get(parent)!, powers.get(id)!]));
+    remaining.set(parent, remaining.get(parent)! - 1);
+    if (remaining.get(parent) === 0) queue.push(parent);
+  }
+  const systems = new Map<string, { voltage: number; phases: number }>();
+  const inheritedSystems = new Map<
+    string,
+    { voltage: number; phases: number }
+  >();
+  const system = (id: string) => {
+    if (systems.has(id)) return systems.get(id)!;
+    const path: string[] = [],
+      visited = new Set<string>();
+    let current = nodes.get(id),
+      result: { voltage: number; phases: number } | undefined;
+    while (current && !visited.has(current.id)) {
+      if (inheritedSystems.has(current.id)) {
+        result = inheritedSystems.get(current.id);
+        break;
+      }
+      path.push(current.id);
+      visited.add(current.id);
+      if (current.properties.voltage_v) {
+        result = {
+          voltage: Number(current.properties.voltage_v),
+          phases: Number(current.properties.phases ?? 3),
+        };
+        break;
+      }
+      const from = incoming.get(current.id)?.from;
+      current = from ? nodes.get(from) : undefined;
+    }
+    if (!result) {
+      const parent = nodes.get(nodes.get(id)?.parentId ?? "");
+      result = {
+        voltage: Number(parent?.properties.voltage_v ?? 380),
+        phases: Number(parent?.properties.phases ?? 3),
+      };
+    }
+    // A fallback depends on the requesting node's panel, so only cache that node.
+    if (current)
+      for (const next of path) {
+        systems.set(next, result);
+        inheritedSystems.set(next, result);
+      }
+    systems.set(id, result);
+    return result;
+  };
+  const panelPower = (id: string) => {
+    const roots = (members.get(id) ?? [])
+      .filter(
+        (node) => nodes.get(incoming.get(node.id)?.from ?? "")?.parentId !== id,
+      )
+      .map((node) => node.id);
+    const visited = new Set<string>(),
+      pending = [...roots],
+      loads: Power[] = [];
+    while (pending.length) {
+      const next = pending.pop()!;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      const node = nodes.get(next);
+      if (node && ["MOTOR", "LOAD"].includes(node.type))
+        loads.push(loadPower(node));
+      pending.push(...(children.get(next) ?? []));
+    }
+    return sumPower(loads);
+  };
+  return { nodes, incoming, powers, system, panelPower };
 }
-export function supply(
+type GraphContext = ReturnType<typeof graphContext>;
+export function downstreamPower(project: Project, id: string): Power {
+  return graphContext(project).powers.get(id) ?? sumPower([]);
+}
+export function supply(project: Project, id: string) {
+  return graphContext(project).system(id);
+}
+export function nodeResult(
   project: Project,
   id: string,
-): { voltage: number; phases: number } {
-  let node = project.nodes.find((n) => n.id === id);
-  const visited = new Set<string>();
-  while (node && !visited.has(node.id)) {
-    visited.add(node.id);
-    if (node.properties.voltage_v)
-      return {
-        voltage: Number(node.properties.voltage_v),
-        phases: Number(node.properties.phases ?? 3),
-      };
-    const incoming = project.edges.find((e) => e.to === node!.id);
-    if (!incoming) break;
-    node = project.nodes.find((n) => n.id === incoming.from);
-  }
-  const initial = project.nodes.find((n) => n.id === id);
-  const parent = project.nodes.find((n) => n.id === initial?.parentId);
-  return {
-    voltage: Number(parent?.properties.voltage_v ?? 380),
-    phases: Number(parent?.properties.phases ?? 3),
-  };
-}
-export function nodeResult(project: Project, id: string): ElectricalResult {
-  const node = project.nodes.find((n) => n.id === id);
+  context: GraphContext = graphContext(project),
+): ElectricalResult {
+  const node = context.nodes.get(id);
   const power =
     node?.type === "PANEL"
-      ? sumPower(
-          project.nodes
-            .filter(
-              (n) =>
-                n.parentId === id &&
-                !project.edges.some(
-                  (e) =>
-                    e.to === n.id &&
-                    project.nodes.some(
-                      (p) => p.id === e.from && p.parentId === id,
-                    ),
-                ),
-            )
-            .map((n) => downstreamPower(project, n.id)),
-        )
-      : downstreamPower(project, id);
-  const system = supply(project, id);
+      ? context.panelPower(id)
+      : (context.powers.get(id) ?? sumPower([]));
+  const system = context.system(id);
   return {
     ...power,
     ...system,
@@ -119,9 +181,13 @@ export function nodeResult(project: Project, id: string): ElectricalResult {
       ((system.phases === 3 ? Math.sqrt(3) : 1) * system.voltage),
   };
 }
-export function cableResult(project: Project, cable: Cable): CableResult {
-  const power = downstreamPower(project, cable.to),
-    system = supply(project, cable.from);
+export function cableResult(
+  project: Project,
+  cable: Cable,
+  context: GraphContext = graphContext(project),
+): CableResult {
+  const power = context.powers.get(cable.to) ?? sumPower([]),
+    system = context.system(cable.from);
   const current =
     (power.apparent * 1000) /
     ((system.phases === 3 ? Math.sqrt(3) : 1) * system.voltage);
@@ -150,6 +216,7 @@ export function cableResult(project: Project, cable: Cable): CableResult {
   };
 }
 export function analyze(project: Project) {
+  const context = graphContext(project);
   const loads = project.nodes.filter(
     (n) => n.type === "MOTOR" || n.type === "LOAD",
   );
@@ -162,17 +229,17 @@ export function analyze(project: Project) {
     0,
   );
   const nodeResults = new Map(
-    project.nodes.map((n) => [n.id, nodeResult(project, n.id)]),
+    project.nodes.map((n) => [n.id, nodeResult(project, n.id, context)]),
   );
   const cables = new Map(
-    project.edges.map((e) => [e.id, cableResult(project, e)]),
+    project.edges.map((e) => [e.id, cableResult(project, e, context)]),
   );
   const issues: Issue[] = [];
   for (const node of project.nodes) {
     const result = nodeResults.get(node.id)!;
     if (
       !["PANEL", "SOURCE", "GENERATOR"].includes(node.type) &&
-      !project.edges.some((e) => e.to === node.id)
+      !context.incoming.has(node.id)
     )
       issues.push({
         id: node.id,
@@ -201,8 +268,9 @@ export function analyze(project: Project) {
       });
   }
   project.edges.forEach((edge) => {
-    const target = project.nodes.find((n) => n.id === edge.to)!;
-    const upstream = supply(project, edge.from);
+    const target = context.nodes.get(edge.to);
+    if (!target) return;
+    const upstream = context.system(edge.from);
     const ratedVoltage =
       target.type === "TRANSFORMER"
         ? target.properties.primary_voltage_v

@@ -17,7 +17,8 @@ import {
   type Field,
   type Properties,
 } from "@/lib/catalog";
-import { analyze, number, type ElectricalResult } from "@/lib/calculations";
+import { number, type ElectricalResult } from "@/lib/calculations";
+import type { Analysis } from "@/lib/canvas-state";
 import type { Cable, Equipment, Project } from "@/lib/project";
 import Symbol from "./symbol";
 
@@ -136,6 +137,7 @@ function ResultRows({ result }: { result: ElectricalResult }) {
 }
 export default function Inspector({
   project,
+  analysis,
   selection,
   tab,
   onTab,
@@ -147,6 +149,7 @@ export default function Inspector({
   onSelect,
 }: {
   project: Project;
+  analysis: Analysis;
   selection: string | null;
   tab: "properties" | "analysis";
   onTab: (tab: "properties" | "analysis") => void;
@@ -160,7 +163,6 @@ export default function Inspector({
   onClear: () => void;
   onSelect: (id: string) => void;
 }) {
-  const analysis = analyze(project);
   const node = project.nodes.find((n) => n.id === selection),
     edge = project.edges.find((e) => e.id === selection);
   const item: Equipment | Cable | undefined = node ?? edge;

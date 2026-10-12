@@ -9,15 +9,9 @@ import {
   type DragEvent,
 } from "react";
 import {
-  Background,
-  BackgroundVariant,
-  MiniMap,
-  ReactFlow,
   ReactFlowProvider,
   type Connection,
   type Edge,
-  type EdgeChange,
-  type NodeChange,
   type ReactFlowInstance,
   type Viewport,
 } from "@xyflow/react";
@@ -71,11 +65,17 @@ import {
   uid,
   type Project,
 } from "@/lib/project";
-import EquipmentNode, { type EquipmentFlowNode } from "./equipment-node";
+import type { EquipmentFlowNode } from "@/lib/canvas-state";
+import {
+  clampEquipmentPosition,
+  sameViewport,
+  nextEquipmentLabel,
+} from "@/lib/geometry";
+import DiagramCanvas from "./diagram-canvas";
+import { restoreWorkspace } from "@/lib/workspace-storage";
 import Inspector from "./inspector";
 import Symbol from "./symbol";
 
-const nodeTypes = { equipment: EquipmentNode };
 type Modal =
   | { type: "create" | "rename"; name: string }
   | { type: "delete"; projectId: string; name: string }
@@ -87,6 +87,7 @@ function WorkspaceInner() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState("");
   const [ready, setReady] = useState(false);
+  const [canSave, setCanSave] = useState(true);
   const [saved, setSaved] = useState<"saving" | "saved" | "error">("saved");
   const [selection, setSelection] = useState<string[]>([]);
   const [history, setHistory] = useState<History>({ past: [], future: [] });
@@ -109,101 +110,55 @@ function WorkspaceInner() {
   > | null>(null);
   const [zoom, setZoom] = useState(1);
   const [newDemo, setNewDemo] = useState(false);
+  const importBusy = useRef(false);
+  const latestProjects = useRef(projects);
+  useEffect(() => {
+    latestProjects.current = projects;
+  }, [projects]);
   const inputRef = useRef<HTMLInputElement>(null),
     canvasRef = useRef<HTMLDivElement>(null);
-  const dragSnapshot = useRef<Project | null>(null);
-  const loadedId = useRef<string>("");
   const project = projects.find((p) => p.projectId === activeId);
   const analysis = useMemo(
     () => (project ? analyze(project) : null),
-    [project],
+    [project?.nodes, project?.edges],
   );
   const notify = useCallback(
     (message: string, error = false) => setToast({ message, error }),
     [],
   );
-  const syncSelection = useCallback(
-    ({
-      nodes: selectedNodes,
-      edges: selectedEdges,
-    }: {
-      nodes: EquipmentFlowNode[];
-      edges: Edge[];
-    }) => {
-      const ids = [
-        ...selectedNodes.map((n) => n.id),
-        ...selectedEdges.map((e) => e.id),
-      ];
-      setSelection((prev) =>
-        prev.length === ids.length && prev.every((id) => ids.includes(id))
-          ? prev
-          : ids,
-      );
-    },
-    [],
-  );
-  const onEdgesChange = useCallback((changes: EdgeChange<Edge>[]) => {
-    const selections = changes.filter((change) => change.type === "select");
-    if (selections.length)
-      setSelection((previous) => {
-        const next = new Set(previous);
-        for (const change of selections) {
-          if (change.type === "select") {
-            if (change.selected) next.add(change.id);
-            else next.delete(change.id);
-          }
-        }
-        return previous.length === next.size &&
-          previous.every((id) => next.has(id))
-          ? previous
-          : [...next];
-      });
-  }, []);
-
   useEffect(() => {
     setLeftOpen(window.innerWidth >= 800);
     setRightOpen(window.innerWidth >= 570);
+    let restored: ReturnType<typeof restoreWorkspace>;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const data = JSON.parse(raw);
-        if (
-          !Array.isArray(data.projects) ||
-          data.projects.length === 0 ||
-          data.projects.length > 100
-        )
-          throw new Error("Invalid workspace");
-        const restored: Project[] = data.projects.map(parseProject);
-        if (new Set(restored.map((p) => p.projectId)).size !== restored.length)
-          throw new Error("Duplicate projects");
-        setProjects(restored);
-        setActiveId(
-          restored.some((p) => p.projectId === data.activeId)
-            ? data.activeId
-            : restored[0].projectId,
-        );
-      } else {
-        const demo = createProject("Instalação industrial", true);
-        setProjects([demo]);
-        setActiveId(demo.projectId);
-      }
+      restored = restoreWorkspace(localStorage);
     } catch {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) localStorage.setItem(`${STORAGE_KEY}.recovery`, raw);
-      } catch {}
       const demo = createProject("Instalação industrial", true);
-      setProjects([demo]);
-      setActiveId(demo.projectId);
+      restored = {
+        projects: [demo],
+        activeId: demo.projectId,
+        canSave: false,
+        recovered: true,
+      };
+    }
+    setProjects(restored.projects);
+    setActiveId(restored.activeId);
+    setCanSave(restored.canSave);
+    if (restored.recovered)
       notify(
-        "Não foi possível restaurar os projetos. Uma cópia dos dados anteriores foi preservada quando possível.",
+        restored.canSave
+          ? "Os projetos válidos foram recuperados. Uma cópia dos dados anteriores foi preservada para recuperação."
+          : "Não foi possível guardar a cópia de recuperação. Os dados anteriores foram mantidos; exporte seus projetos em JSON.",
         true,
       );
-    }
     setReady(true);
   }, [notify]);
   useEffect(() => {
     if (!ready || !projects.length) return;
+    if (!canSave) {
+      setSaved("error");
+      return;
+    }
     setSaved("saving");
     const timer = setTimeout(() => {
       try {
@@ -221,15 +176,14 @@ function WorkspaceInner() {
       }
     }, 500);
     return () => clearTimeout(timer);
-  }, [projects, activeId, ready, notify]);
+  }, [projects, activeId, ready, notify, canSave]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 7000);
     return () => clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
-    if (!project || !flow || loadedId.current === project.projectId) return;
-    loadedId.current = project.projectId;
+    if (!project || !flow) return;
     const timer = setTimeout(() => {
       const v = project.viewport;
       if (!project.nodes.length) {
@@ -249,9 +203,9 @@ function WorkspaceInner() {
         );
       } catch {}
     };
-    if (ready) window.addEventListener("pagehide", handler);
+    if (ready && canSave) window.addEventListener("pagehide", handler);
     return () => window.removeEventListener("pagehide", handler);
-  }, [ready, projects, activeId]);
+  }, [ready, projects, activeId, canSave]);
 
   const remember = useCallback(
     (snapshot: Project) =>
@@ -263,7 +217,7 @@ function WorkspaceInner() {
   );
   const commit = useCallback(
     (next: Project, record = true) => {
-      if (!project) return;
+      if (!project || next === project || next.projectId !== project.projectId) return;
       if (record) remember(project);
       setProjects((prev) =>
         prev.map((p) =>
@@ -275,7 +229,24 @@ function WorkspaceInner() {
     },
     [project, remember],
   );
+  const saveViewport = useCallback((projectId: string, viewport: Viewport) => {
+    setProjects((previous) => {
+      let changed = false;
+      const next = previous.map((item) => {
+        if (
+          item.projectId !== projectId ||
+          sameViewport(item.viewport, viewport)
+        )
+          return item;
+        changed = true;
+        return { ...item, viewport };
+      });
+      return changed ? next : previous;
+    });
+  }, []);
+  const showProperties = useCallback(() => setTab("properties"), []);
   const selectProject = (id: string) => {
+    if (id === activeId) return;
     setActiveId(id);
     setSelection([]);
     setHistory({ past: [], future: [] });
@@ -338,6 +309,14 @@ function WorkspaceInner() {
     if (!project) return;
     const original = project.nodes.find((n) => n.id === selection[0]);
     if (!original) return;
+    const childCount =
+      original.type === "PANEL"
+        ? project.nodes.filter((node) => node.parentId === original.id).length
+        : 0;
+    if (project.nodes.length + childCount + 1 > 2000) {
+      notify("A cópia ultrapassa o limite de 2.000 equipamentos.", true);
+      return;
+    }
     const copy = {
       ...original,
       id: uid("node"),
@@ -345,6 +324,7 @@ function WorkspaceInner() {
       position: { x: original.position.x + 40, y: original.position.y + 40 },
       properties: { ...original.properties },
     };
+    copy.position = clampEquipmentPosition(copy, copy.position);
     if (copy.parentId) {
       copy.position.x = Math.min(
         copy.type === "BUSBAR" ? 320 : 440,
@@ -388,7 +368,7 @@ function WorkspaceInner() {
       edges: [...project.edges, ...edges],
     });
     setSelection([copy.id]);
-  }, [project, selection, commit]);
+  }, [project, selection, commit, notify]);
   useEffect(() => {
     const handle = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
@@ -427,115 +407,6 @@ function WorkspaceInner() {
     return () => window.removeEventListener("keydown", handle);
   }, [modal, undo, redo, exportProject, duplicate, removeSelection, flow]);
 
-  const nodes = useMemo<EquipmentFlowNode[]>(
-    () =>
-      project?.nodes.map((n) => ({
-        id: n.id,
-        type: "equipment",
-        position: n.position,
-        parentId: n.parentId,
-        extent: n.parentId ? "parent" : undefined,
-        expandParent: false,
-        selected: selection.includes(n.id),
-        style: {
-          width: n.type === "PANEL" ? 620 : n.type === "BUSBAR" ? 300 : 168,
-          height: n.type === "PANEL" ? 550 : n.type === "BUSBAR" ? 90 : 120,
-        },
-        data: {
-          equipment: n,
-          result: analysis?.nodeResults.get(n.id),
-          warning: Boolean(
-            analysis?.issues.some(
-              (i) => i.id === n.id && i.severity === "warning",
-            ),
-          ),
-        },
-      })) ?? [],
-    [project, analysis, selection],
-  );
-  const edges = useMemo<Edge[]>(
-    () =>
-      project?.edges.map((e) => ({
-        id: e.id,
-        source: e.from,
-        target: e.to,
-        sourceHandle:
-          e.sourceHandle ??
-          (project.nodes.find((n) => n.id === e.from)?.type === "BUSBAR"
-            ? "out-1"
-            : "out"),
-        targetHandle: "in",
-        type: "smoothstep",
-        selected: selection.includes(e.id),
-        label: `${e.label} · ${e.properties.section_mm2} mm²`,
-        style: {
-          stroke: selection.includes(e.id) ? "#21856b" : "#809497",
-          strokeWidth: selection.includes(e.id) ? 2.4 : 1.5,
-        },
-        labelStyle: {
-          fontSize: 10,
-          fill: selection.includes(e.id) ? "#187a60" : "#788486",
-        },
-        labelBgStyle: { fill: "#f9fbf9", fillOpacity: 0.95 },
-        labelBgPadding: [5, 3],
-        labelBgBorderRadius: 4,
-        pathOptions: { borderRadius: 3, offset: 20 },
-      })) ?? [],
-    [project, selection],
-  );
-  const onNodesChange = useCallback(
-    (changes: NodeChange<EquipmentFlowNode>[]) => {
-      if (!project) return;
-      const selections = changes.filter((c) => c.type === "select");
-      if (selections.length)
-        setSelection((prev) => {
-          const next = new Set(prev);
-          for (const change of selections) {
-            if (change.type === "select") {
-              if (change.selected) next.add(change.id);
-              else next.delete(change.id);
-            }
-          }
-          return prev.length === next.size && prev.every((id) => next.has(id))
-            ? prev
-            : [...next];
-        });
-      const positions = changes.filter((c) => c.type === "position");
-      if (positions.length)
-        commit(
-          {
-            ...project,
-            nodes: project.nodes.map((n) => {
-              const change = positions.find((c) => c.id === n.id);
-              return change?.type === "position" && change.position
-                ? {
-                    ...n,
-                    position: {
-                      x: Math.max(
-                        n.parentId ? 0 : -100000,
-                        Math.min(
-                          n.parentId
-                            ? n.type === "BUSBAR"
-                              ? 320
-                              : 440
-                            : 100000,
-                          change.position.x,
-                        ),
-                      ),
-                      y: Math.max(
-                        n.parentId ? 44 : -100000,
-                        Math.min(n.parentId ? 430 : 100000, change.position.y),
-                      ),
-                    },
-                  }
-                : n;
-            }),
-          },
-          false,
-        );
-    },
-    [project, commit],
-  );
   const connect = useCallback(
     (connection: Connection) => {
       if (!project || !connection.source || !connection.target) return;
@@ -566,6 +437,10 @@ function WorkspaceInner() {
     point?: { x: number; y: number },
   ) => {
     if (!project || !flow || !canvasRef.current) return;
+    if (project.nodes.length >= 2000) {
+      notify("Limite de 2.000 equipamentos por projeto.", true);
+      return;
+    }
     const box = canvasRef.current.getBoundingClientRect();
     const selected = project.nodes.find((n) => n.id === selection[0]);
     const selectedParent = project.nodes.find(
@@ -597,19 +472,6 @@ function WorkspaceInner() {
               position.y < n.position.y + 550,
           )
         : undefined;
-    const count = project.nodes.filter((n) => n.type === type).length + 1;
-    const prefixes: Record<EquipmentType, string> = {
-      SOURCE: "Rede",
-      TRANSFORMER: "TR",
-      PANEL: "QGBT",
-      BUSBAR: "Barra",
-      CIRCUIT_BREAKER: "DJ",
-      SWITCH: "CH",
-      TIE: "TIE",
-      MOTOR: "M",
-      LOAD: "Carga",
-      GENERATOR: "G",
-    };
     const adjusted = panel
       ? {
           x: Math.max(
@@ -621,11 +483,11 @@ function WorkspaceInner() {
           ),
           y: Math.max(44, Math.min(430, position.y - panel.position.y)),
         }
-      : position;
+      : clampEquipmentPosition({ type }, position);
     const equipment = createEquipment(
       type,
       adjusted,
-      `${prefixes[type]}-${String(count).padStart(2, "0")}`,
+      nextEquipmentLabel(project, type),
       panel?.id,
     );
     commit({
@@ -710,7 +572,11 @@ function WorkspaceInner() {
       });
   };
   const importFile = async (file: File) => {
-    if (projects.length >= 100) {
+    if (importBusy.current) {
+      notify("Uma importação já está em andamento.", true);
+      return;
+    }
+    if (latestProjects.current.length >= 100) {
       notify(
         "Limite de 100 projetos locais. Exporte e remova um projeto antes de importar.",
         true,
@@ -721,9 +587,12 @@ function WorkspaceInner() {
       notify("O arquivo deve ter no máximo 10 MB.", true);
       return;
     }
+    importBusy.current = true;
     try {
       const imported = parseProject(JSON.parse(await file.text()));
-      if (projects.some((p) => p.projectId === imported.projectId)) {
+      if (
+        latestProjects.current.some((p) => p.projectId === imported.projectId)
+      ) {
         imported.projectId = uid("proj");
         imported.name = `${imported.name.slice(0, 85)} · importado`;
       }
@@ -741,6 +610,8 @@ function WorkspaceInner() {
             : "Não foi possível importar o arquivo.",
         true,
       );
+    } finally {
+      importBusy.current = false;
     }
   };
   const submitModal = () => {
@@ -1120,7 +991,7 @@ function WorkspaceInner() {
           </div>
         </div>
         <div
-          className="canvas-area"
+          className={`canvas-area canvas-mode-${mode}`}
           ref={canvasRef}
           onDrop={onDrop}
           onDragOver={(e) => {
@@ -1128,112 +999,23 @@ function WorkspaceInner() {
             e.dataTransfer.dropEffect = "copy";
           }}
         >
-          <ReactFlow<EquipmentFlowNode, Edge>
-            nodes={nodes}
-            edges={edges}
-            nodeTypes={nodeTypes}
+          <DiagramCanvas
+            key={project.projectId}
+            project={project}
+            analysis={analysis}
+            selection={selection}
+            onSelection={setSelection}
+            mode={mode}
+            snap={snap}
+            showMap={showMap}
             onInit={setFlow}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
             onConnect={connect}
-            onSelectionChange={syncSelection}
-            onNodeClick={(_, node) => {
-              setSelection([node.id]);
-              setTab("properties");
-            }}
-            onEdgeClick={(_, edge) => {
-              setSelection([edge.id]);
-              setTab("properties");
-            }}
-            onPaneClick={() => setSelection([])}
-            onNodeDragStart={() => {
-              dragSnapshot.current = project;
-            }}
-            onNodeDragStop={(_, node) => {
-              if (dragSnapshot.current) {
-                remember(dragSnapshot.current);
-                dragSnapshot.current = null;
-              }
-              if (node.data.equipment.type !== "PANEL" && !node.parentId) {
-                const panel = project.nodes.find(
-                  (n) =>
-                    n.type === "PANEL" &&
-                    node.position.x >= n.position.x &&
-                    node.position.x < n.position.x + 620 &&
-                    node.position.y >= n.position.y + 44 &&
-                    node.position.y < n.position.y + 550,
-                );
-                if (panel) {
-                  const position = {
-                    x: Math.max(
-                      0,
-                      Math.min(
-                        node.data.equipment.type === "BUSBAR" ? 320 : 440,
-                        node.position.x - panel.position.x,
-                      ),
-                    ),
-                    y: Math.max(
-                      44,
-                      Math.min(430, node.position.y - panel.position.y),
-                    ),
-                  };
-                  commit(
-                    {
-                      ...project,
-                      nodes: project.nodes.map((n) =>
-                        n.id === node.id
-                          ? { ...n, parentId: panel.id, position }
-                          : n,
-                      ),
-                    },
-                    false,
-                  );
-                }
-              }
-            }}
-            onMove={(_, viewport) => setZoom(viewport.zoom)}
-            onMoveEnd={(_, viewport: Viewport) => {
-              setProjects((prev) =>
-                prev.map((p) =>
-                  p.projectId === activeId ? { ...p, viewport } : p,
-                ),
-              );
-            }}
-            snapToGrid={snap}
-            snapGrid={[20, 20]}
-            nodesDraggable={mode === "select"}
-            panOnDrag={mode === "pan" ? [0, 1, 2] : [1, 2]}
-            selectionOnDrag={mode === "select"}
-            selectionKeyCode="Shift"
-            multiSelectionKeyCode={["Control", "Meta"]}
-            deleteKeyCode={null}
-            minZoom={0.15}
-            maxZoom={2.5}
-            zoomOnDoubleClick={false}
-            connectionRadius={28}
-            connectionLineStyle={{ stroke: "#21856b", strokeWidth: 2 }}
-            proOptions={{ hideAttribution: false }}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={20}
-              size={1}
-              color="#d4ddd8"
-            />
-            {showMap && (
-              <MiniMap
-                pannable
-                zoomable
-                nodeColor={(n) =>
-                  (n as EquipmentFlowNode).data.equipment.type === "PANEL"
-                    ? "#dbece4"
-                    : "#668f7e"
-                }
-                nodeStrokeColor="#9cb8ab"
-                maskColor="rgba(243,246,243,0.65)"
-              />
-            )}
-          </ReactFlow>
+            onCommit={commit}
+            onProperties={showProperties}
+            onZoom={setZoom}
+            onViewport={saveViewport}
+          />
+
           <div className="canvas-toolbar">
             <button
               className={mode === "select" ? "active" : ""}
@@ -1399,6 +1181,7 @@ function WorkspaceInner() {
       </main>
       <Inspector
         project={project}
+        analysis={analysis}
         selection={selection[0] ?? null}
         tab={tab}
         onTab={setTab}

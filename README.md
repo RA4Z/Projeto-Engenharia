@@ -72,4 +72,16 @@ O salvamento depende da origem e do armazenamento disponível no navegador. Expo
 
 ## Organização
 
-`app/`: aplicação Next.js e estilos; `components/`: workspace, símbolos e inspector; `lib/project.ts`: contrato JSON e operações de grafo; `lib/catalog.ts`: tipos e propriedades; `lib/calculations.ts`: cálculos; `tests/`: testes de engenharia e persistência.
+`app/`: aplicação Next.js e estilos; `components/`: workspace, canvas, símbolos e inspector; `lib/project.ts`: contrato JSON e operações de grafo; `lib/catalog.ts`: tipos e propriedades; `lib/calculations.ts`: cálculos; `tests/`: testes de engenharia, interação e persistência.
+
+## Estabilidade do editor
+
+O `DiagramCanvas` mantém posições transitórias e medições no estado do React Flow, usando `applyNodeChanges` e `applyEdgeChanges`. O projeto é atualizado apenas ao finalizar o arraste. Uma movimentação de grupo ou painel gera uma única entrada no histórico. Atualizações repetidas sem alterações preservam as referências de estado, e os limites dos subelementos são compartilhados pelo canvas e pelo modelo JSON.
+
+Durante o arraste, a análise elétrica e o salvamento local não são executados novamente. A análise usa índices de nós, conexões e alimentações e acumula as potências do circuito radial em ordem topológica, sem recursão profunda. O inspector recebe a mesma análise calculada pelo workspace.
+
+O cursor acompanha o modo: seta na área de seleção, mão na navegação e cruz na conexão. Equipamentos e portas indicam suas interações próprias.
+
+Na recuperação local, projetos válidos são mantidos mesmo se outro projeto estiver corrompido. O conteúdo anterior é copiado para a chave de recuperação; se essa cópia falhar, o editor bloqueia a sobrescrita automática dos dados originais e permite exportar o trabalho em JSON.
+
+Os testes incluem React StrictMode, centenas de alterações de posição e medição, limites de painéis, movimentação em grupo, referências estáveis, recuperação com armazenamento bloqueado e análise de um circuito com 1.900 equipamentos.

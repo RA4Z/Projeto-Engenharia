@@ -1,18 +1,12 @@
 "use client";
-import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { memo } from "react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { catalog } from "@/lib/catalog";
-import type { Equipment } from "@/lib/project";
-import { number, type ElectricalResult } from "@/lib/calculations";
+import type { EquipmentFlowNode } from "@/lib/canvas-state";
+import { number } from "@/lib/calculations";
 import Symbol from "./symbol";
 
-export type EquipmentFlowNode = Node<
-  { equipment: Equipment; result?: ElectricalResult; warning: boolean },
-  "equipment"
->;
-export default function EquipmentNode({
-  data,
-  selected,
-}: NodeProps<EquipmentFlowNode>) {
+function EquipmentNode({ data, selected }: NodeProps<EquipmentFlowNode>) {
   const { equipment: n, result, warning } = data;
   const definition = catalog[n.type];
   if (n.type === "PANEL")
@@ -111,3 +105,5 @@ export default function EquipmentNode({
     </div>
   );
 }
+
+export default memo(EquipmentNode);
